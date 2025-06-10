@@ -63,22 +63,8 @@ class MessageHandler {
         return;
       }
       
-      // 嘗試獲取管理員資訊，如果失敗則使用預設值
-      let adminUsername = 'admin'; // 預設管理員名稱
-      try {
-        const adminUsers = await whmcsApi.getAdminUsers();
-        const adminUser = adminUsers.find(admin => 
-          admin.email === message.author.tag || 
-          admin.username === message.author.username ||
-          admin.email.includes(message.author.username)
-        );
-        if (adminUser) {
-          adminUsername = adminUser.username;
-        }
-      } catch (adminError) {
-        logger.warn('Failed to get admin users, using default admin username:', adminError.message);
-        // 繼續使用預設的 adminUsername
-      }
+      // 使用 Discord 使用者名稱作為管理員身份
+      const adminUsername = `【客服人員】${message.author.username}`;
       
       // 準備訊息內容
       let messageContent = message.content || '';
@@ -88,16 +74,25 @@ class MessageHandler {
       if (message.attachments.size > 0) {
         logger.info(`Processing ${message.attachments.size} attachments for ticket ${ticketMapping.whmcsTicketId}`);
         
+        // 允許的檔案類型
+        const allowedExtensions = ['.jpg', '.gif', '.jpeg', '.png', '.txt', '.pdf'];
+        const maxSize = 2 * 1024 * 1024; // 2MB
+        let invalidFiles = [];
+        
         for (const attachment of message.attachments.values()) {
           try {
-            // 檢查檔案大小限制 (例如 10MB)
-            const maxSize = 10 * 1024 * 1024; // 10MB
+            // 檢查檔案類型
+            const fileExtension = attachment.name.toLowerCase().substring(attachment.name.lastIndexOf('.'));
+            if (!allowedExtensions.includes(fileExtension)) {
+              logger.warn(`Attachment ${attachment.name} has invalid file type: ${fileExtension}`);
+              invalidFiles.push(`${attachment.name} (不支援的檔案類型: ${fileExtension})`);
+              continue;
+            }
+            
+            // 檢查檔案大小限制
             if (attachment.size > maxSize) {
-              logger.warn(`Attachment ${attachment.name} too large (${attachment.size} bytes), adding as link instead`);
-              if (messageContent) {
-                messageContent += '\n\n';
-              }
-              messageContent += `📎 ${attachment.name} (檔案過大，請使用連結下載: ${attachment.url})`;
+              logger.warn(`Attachment ${attachment.name} too large (${(attachment.size / 1024 / 1024).toFixed(2)}MB), max allowed is 2MB`);
+              invalidFiles.push(`${attachment.name} (檔案過大: ${(attachment.size / 1024 / 1024).toFixed(2)}MB，限制 2MB)`);
               continue;
             }
             
@@ -134,6 +129,15 @@ class MessageHandler {
             messageContent += '\n\n';
           }
           messageContent += `📎 已附加 ${attachments.length} 個檔案`;
+        }
+        
+        // 如果有無效檔案，通知客服人員
+        if (invalidFiles.length > 0) {
+          const warningMsg = await message.channel.send({
+            content: `⚠️ **檔案上傳警告**\n以下檔案無法上傳到 WHMCS：\n${invalidFiles.map(f => `• ${f}`).join('\n')}\n\n僅支援: ${allowedExtensions.join(', ')} 格式，最大 2MB`,
+            reply: { messageReference: message.id }
+          });
+          setTimeout(() => warningMsg.delete(), 10000); // 10秒後刪除警告訊息
         }
       }
       
