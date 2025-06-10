@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const config = require('../../config');
 const logger = require('../utils/logger');
 const webhookHandler = require('./webhook-handler');
+const console = require('../utils/console-logger');
 
 class WebhookServer {
   constructor() {
@@ -16,6 +17,7 @@ class WebhookServer {
     this.app.use(bodyParser.urlencoded({ extended: true }));
     
     this.app.use((req, res, next) => {
+      console.log(`🔔 Webhook received: ${req.method} ${req.path}`);
       logger.info(`Webhook received: ${req.method} ${req.path}`);
       next();
     });

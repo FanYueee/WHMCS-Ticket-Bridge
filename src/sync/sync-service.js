@@ -4,6 +4,7 @@ const repository = require('../database/repository');
 const TicketFormatter = require('../whmcs/ticket-formatter');
 const logger = require('../utils/logger');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const console = require('../utils/console-logger');
 
 class SyncService {
   async syncDepartments() {
@@ -160,6 +161,7 @@ class SyncService {
         status: ticket.status
       });
       
+      console.log(`📌 Created Discord channel for ticket ${ticket.tid}`);
       logger.info(`Created Discord channel for ticket ${ticket.tid}`);
     } catch (error) {
       logger.error('Error creating ticket channel with mapping:', error);
@@ -305,6 +307,7 @@ class SyncService {
     
     const runSync = async () => {
       try {
+        console.log(`🔄 Running periodic sync...`);
         logger.info('Running periodic sync...');
         const activeTickets = await repository.getAllActiveTickets();
         
@@ -321,8 +324,10 @@ class SyncService {
           }
         }
         
+        console.log(`✅ Periodic sync completed - checked ${activeTickets.length} active tickets`);
         logger.info('Periodic sync completed');
       } catch (error) {
+        console.error(`❌ Error in periodic sync: ${error.message}`);
         logger.error('Error in periodic sync:', error);
       }
     };

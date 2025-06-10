@@ -3,6 +3,7 @@ const whmcsApi = require('../whmcs/api');
 const repository = require('../database/repository');
 const TicketFormatter = require('../whmcs/ticket-formatter');
 const logger = require('../utils/logger');
+const console = require('../utils/console-logger');
 
 class MessageHandler {
   constructor() {
@@ -171,8 +172,10 @@ class MessageHandler {
       
       await message.react('✅');
       
+      console.log(`✉️  Synced Discord message to WHMCS ticket ${ticketMapping.whmcsTicketId}`);
       logger.info(`Synced Discord message to WHMCS ticket ${ticketMapping.whmcsTicketId}`);
     } catch (error) {
+      console.error(`❌ Failed to sync reply to ticket ${ticketMapping.whmcsTicketId}: ${error.message}`);
       logger.error('Error syncing reply to WHMCS:', error);
       await message.react('❌');
       const errorMsg = await message.channel.send('Failed to sync reply to WHMCS.');
