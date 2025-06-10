@@ -1,0 +1,37 @@
+{
+  "name": "WHMCS-Ticket-Bridge",
+  "version": "1.0.0",
+  "description": "WHMCS and Discord bidirectional ticket synchronization system",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "lint": "eslint src/",
+    "db:migrate": "node database/migrate.js"
+  },
+  "keywords": [
+    "whmcs",
+    "discord",
+    "ticket",
+    "sync"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "sqlite3": "^5.1.6",
+    "sequelize": "^6.35.2",
+    "winston": "^3.11.0",
+    "body-parser": "^1.20.2",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "jest": "^29.7.0",
+    "eslint": "^8.56.0"
+  }
+}
