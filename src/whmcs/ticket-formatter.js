@@ -101,12 +101,15 @@ class TicketFormatter {
   }
 
   static formatCategoryName(departmentName) {
+    // 保留中文、英文、數字、空格和連字符
+    // Discord 不允許的字符：@ # : ` ~ 
     const cleanName = departmentName
-      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/[@#:`~]/g, '') // 只移除 Discord 不允許的特殊字符
+      .replace(/\s+/g, ' ') // 將多個空格合併為一個
       .trim()
-      .substring(0, 32);
+      .substring(0, 100); // Discord category 名稱上限是 100 字符
     
-    return `Tickets - ${cleanName}`;
+    return cleanName || 'General Support';
   }
 
   static parseChannelName(channelName) {

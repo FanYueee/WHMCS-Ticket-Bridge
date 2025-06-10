@@ -16,22 +16,43 @@ class SyncService {
         
         if (!existingMapping) {
           const categoryName = TicketFormatter.formatCategoryName(dept.name);
-          const existingCategory = await discordBot.getCategoryByName(categoryName);
           
-          let category;
-          if (existingCategory) {
-            category = existingCategory;
+          let category = await discordBot.getCategoryByName(categoryName);
+          
+          if (category) {
+            // 檢查這個 Discord 分類是否已被其他部門使用
+            const existingCategoryMapping = await repository.getDepartmentMappingByCategoryId(category.id);
+            
+            if (existingCategoryMapping && existingCategoryMapping.whmcsDepartmentId !== dept.id) {
+              // 如果分類已被其他部門使用，創建一個新的分類名稱
+              const uniqueCategoryName = `${categoryName} - ${dept.id}`;
+              category = await discordBot.getCategoryByName(uniqueCategoryName);
+              if (!category) {
+                category = await discordBot.createCategory(uniqueCategoryName);
+              }
+              console.log(`⚠️ Category name conflict, created unique category: ${uniqueCategoryName}`);
+            }
           } else {
+            // 分類不存在，創建新的
             category = await discordBot.createCategory(categoryName);
           }
           
-          await repository.createDepartmentMapping({
-            whmcsDepartmentId: dept.id,
-            departmentName: dept.name,
-            discordCategoryId: category.id
-          });
-          
-          logger.info(`Mapped department ${dept.name} to Discord category ${category.name}`);
+          try {
+            await repository.createDepartmentMapping({
+              whmcsDepartmentId: dept.id,
+              departmentName: dept.name,
+              discordCategoryId: category.id
+            });
+            
+            logger.info(`Mapped department ${dept.name} to Discord category ${category.name}`);
+          } catch (error) {
+            if (error.name === 'SequelizeUniqueConstraintError') {
+              console.error(`❌ Failed to map department ${dept.name}: Category ${category.id} already in use`);
+              logger.error(`Unique constraint error for department ${dept.name}`, error);
+            } else {
+              throw error;
+            }
+          }
         }
       }
     } catch (error) {
@@ -220,13 +241,25 @@ class SyncService {
       
       const replies = ticket.replies?.reply || [];
       
+      // 臨時日誌：查看回覆結構
+      if (replies.length > 0 && typeof replies[0] === 'string') {
+        logger.warn(`Ticket ${ticket.tid} has string replies instead of objects:`, replies);
+        console.warn(`⚠️ Ticket ${ticket.tid} has unexpected reply format`);
+        return; // 暫時跳過這種格式的回覆
+      }
+      
       for (const reply of replies) {
-        if (!reply.id) {
-          logger.warn('Reply missing ID, skipping sync');
+        // 記錄回覆結構以進行偵錯
+        if (!reply.id && !reply.replyid) {
+          logger.warn('Reply missing ID, skipping sync. Reply data:', JSON.stringify(reply));
+          console.warn(`⚠️ Reply missing ID for ticket ${ticket.tid}`);
           continue;
         }
         
-        const existingSync = await repository.getMessageSyncByWhmcsReplyId(reply.id);
+        // 嘗試使用 replyid 或 id
+        const replyId = reply.replyid || reply.id;
+        
+        const existingSync = await repository.getMessageSyncByWhmcsReplyId(replyId);
         
         if (!existingSync) {
           const isAdmin = reply.admin !== '';
@@ -236,12 +269,13 @@ class SyncService {
           
           await repository.createMessageSync({
             whmcsTicketId: ticket.tid,
-            whmcsReplyId: reply.id,
+            whmcsReplyId: replyId,
             discordMessageId: message.id,
             direction: 'whmcs_to_discord'
           });
           
-          logger.info(`Synced reply ${reply.id} from WHMCS to Discord`);
+          console.log(`📨 Synced reply ${replyId} from WHMCS to Discord for ticket ${ticket.tid}`);
+          logger.info(`Synced reply ${replyId} from WHMCS to Discord`);
         }
       }
     } catch (error) {
