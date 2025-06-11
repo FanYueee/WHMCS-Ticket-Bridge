@@ -171,8 +171,10 @@ class SyncService {
         embeds: [ticketEmbed], 
         components: [actionRow] 
       });
+
+      // 注意：初始訊息內容通常在 replies 中，不需要單獨處理 ticket.message
       
-      await repository.createTicketMapping({
+      const ticketMapping = await repository.createTicketMapping({
         whmcsTicketId: ticket.tid,
         whmcsInternalId: ticket.internalId || ticket.id || ticket.ticketid,
         discordChannelId: channel.id,
@@ -185,6 +187,11 @@ class SyncService {
       
       console.log(`📌 Created Discord channel for ticket ${ticket.tid}`);
       logger.info(`Created Discord channel for ticket ${ticket.tid}`);
+      
+      // 建立頻道和映射後立即同步回覆
+      logger.info(`Starting reply sync for ticket ${ticket.tid}`);
+      await this.syncTicketReplies(ticket);
+      logger.info(`Completed reply sync for ticket ${ticket.tid}`);
     } catch (error) {
       logger.error('Error creating ticket channel with mapping:', error);
       throw error;
@@ -234,19 +241,28 @@ class SyncService {
 
   async syncTicketReplies(ticket) {
     try {
+      logger.info(`syncTicketReplies called for ticket ${ticket.tid}`);
+      
       const mapping = await repository.getTicketMappingByWhmcsId(ticket.tid);
-      if (!mapping) return;
+      if (!mapping) {
+        logger.warn(`No mapping found for ticket ${ticket.tid}`);
+        return;
+      }
       
       const channel = await discordBot.getChannel(mapping.discordChannelId);
-      if (!channel) return;
+      if (!channel) {
+        logger.warn(`No channel found for ticket ${ticket.tid}, channel ID: ${mapping.discordChannelId}`);
+        return;
+      }
       
       const replies = ticket.replies?.reply || [];
+      logger.info(`Found ${replies.length} replies for ticket ${ticket.tid}`);
       
-      // 臨時日誌：查看回覆結構
+      // 檢查回覆結構但不跳過處理
       if (replies.length > 0 && typeof replies[0] === 'string') {
         logger.warn(`Ticket ${ticket.tid} has string replies instead of objects:`, replies);
         console.warn(`⚠️ Ticket ${ticket.tid} has unexpected reply format`);
-        return; // 暫時跳過這種格式的回覆
+        // 移除 return，繼續處理
       }
       
       for (const reply of replies) {
@@ -259,10 +275,15 @@ class SyncService {
         
         // 嘗試使用 replyid 或 id
         const replyId = reply.replyid || reply.id;
+        logger.info(`Processing reply for ticket ${ticket.tid}: replyId=${replyId}, admin=${reply.admin}, message preview="${reply.message ? reply.message.substring(0, 50) : 'EMPTY'}..."`);
         
-        const existingSync = await repository.getMessageSyncByWhmcsReplyId(replyId);
+        const existingSync = await repository.getMessageSyncByWhmcsReplyId(replyId, ticket.tid);
+        logger.info(`Existing sync check for reply ${replyId}: ${existingSync ? 'EXISTS' : 'NOT_EXISTS'}`);
         
-        if (!existingSync) {
+        // 簡化邏輯：只檢查資料庫記錄，不驗證 Discord 訊息
+        let shouldSync = !existingSync;
+        
+        if (shouldSync) {
           const isAdmin = reply.admin !== '';
           const replyEmbed = TicketFormatter.createReplyEmbed(reply, isAdmin);
           
@@ -322,7 +343,7 @@ class SyncService {
     try {
       await this.syncDepartments();
       
-      const tickets = await whmcsApi.getTickets();
+      const tickets = await whmcsApi.getAllTickets();
       let syncedCount = 0;
       
       logger.info(`Found ${tickets.length} tickets from WHMCS API`);
@@ -345,9 +366,8 @@ class SyncService {
               // 將列表中的內部 ID 添加到票務詳情中
               ticketDetails.internalId = ticketSummary.id || ticketSummary.ticketid;
               
-              // 直接調用創建頻道的邏輯，避免重複的 API 調用
+              // 直接調用創建頻道的邏輯，syncTicketReplies 已在 createNewTicketChannel 中調用
               await this.createNewTicketChannel(ticketDetails);
-              await this.syncTicketReplies(ticketDetails);
               syncedCount++;
             } catch (error) {
               if (error.message === 'Ticket ID Not Found') {
@@ -358,7 +378,15 @@ class SyncService {
               }
             }
           } else {
-            logger.debug(`Ticket ${ticketId} already has mapping, skipping initial sync`);
+            // 現有票務也需要同步可能遺漏的回覆
+            logger.debug(`Ticket ${ticketId} already has mapping, checking for missing replies`);
+            try {
+              const ticketDetails = await whmcsApi.getTicket(ticketId);
+              ticketDetails.internalId = ticketSummary.id || ticketSummary.ticketid;
+              await this.syncTicketReplies(ticketDetails);
+            } catch (error) {
+              logger.error(`Error syncing replies for existing ticket ${ticketId}:`, error);
+            }
           }
         }
       }

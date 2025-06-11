@@ -89,11 +89,11 @@ const MessageSync = sequelize.define('MessageSync', {
     autoIncrement: true
   },
   whmcsTicketId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     allowNull: false
   },
   whmcsReplyId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     allowNull: true
   },
   discordMessageId: {
@@ -111,7 +111,13 @@ const MessageSync = sequelize.define('MessageSync', {
   }
 }, {
   tableName: 'message_syncs',
-  timestamps: true
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['whmcsTicketId', 'whmcsReplyId']
+    }
+  ]
 });
 
 module.exports = {

@@ -105,13 +105,30 @@ class Repository {
     }
   }
 
-  async getMessageSyncByWhmcsReplyId(whmcsReplyId) {
+  async getMessageSyncByWhmcsReplyId(whmcsReplyId, whmcsTicketId = null) {
     try {
+      const whereCondition = { whmcsReplyId };
+      if (whmcsTicketId) {
+        whereCondition.whmcsTicketId = whmcsTicketId;
+      }
+      
       return await MessageSync.findOne({
-        where: { whmcsReplyId }
+        where: whereCondition
       });
     } catch (error) {
       logger.error('Error getting message sync by WHMCS reply ID:', error);
+      throw error;
+    }
+  }
+
+  async deleteMessageSync(id) {
+    try {
+      const deletedCount = await MessageSync.destroy({
+        where: { id }
+      });
+      return deletedCount > 0;
+    } catch (error) {
+      logger.error('Error deleting message sync:', error);
       throw error;
     }
   }

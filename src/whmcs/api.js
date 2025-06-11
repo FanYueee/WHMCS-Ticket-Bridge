@@ -70,9 +70,12 @@ class WhmcsApi {
     }
   }
 
-  async getTickets(status = '', departmentId = '') {
+  async getTickets(status = '', departmentId = '', limitStart = 0, limitNum = 100) {
     try {
-      const params = {};
+      const params = {
+        limitstart: limitStart,
+        limitnum: limitNum
+      };
       if (status) params.status = status;
       if (departmentId) params.deptid = departmentId;
       
@@ -80,6 +83,36 @@ class WhmcsApi {
       return response.tickets.ticket || [];
     } catch (error) {
       logger.error('Error fetching tickets:', error);
+      throw error;
+    }
+  }
+
+  async getAllTickets(status = '', departmentId = '') {
+    try {
+      let allTickets = [];
+      let limitStart = 0;
+      const limitNum = 100;
+      let hasMoreTickets = true;
+
+      while (hasMoreTickets) {
+        const tickets = await this.getTickets(status, departmentId, limitStart, limitNum);
+        
+        if (tickets.length === 0) {
+          hasMoreTickets = false;
+        } else {
+          allTickets = allTickets.concat(tickets);
+          limitStart += limitNum;
+          
+          // 如果返回的票務數量少於請求數量，表示沒有更多票務了
+          if (tickets.length < limitNum) {
+            hasMoreTickets = false;
+          }
+        }
+      }
+
+      return allTickets;
+    } catch (error) {
+      logger.error('Error fetching all tickets:', error);
       throw error;
     }
   }

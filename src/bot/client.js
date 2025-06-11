@@ -80,6 +80,10 @@ class DiscordBot {
 
   async createTicketChannel(categoryId, channelName, topic = '') {
     try {
+      if (!this.guild) {
+        throw new Error('Discord bot is not connected to any guild');
+      }
+      
       const channel = await this.guild.channels.create({
         name: channelName,
         type: 0, // ChannelType.GuildText
@@ -113,6 +117,11 @@ class DiscordBot {
 
   async getChannel(channelId) {
     try {
+      if (!this.guild) {
+        logger.error(`Discord bot is not connected to any guild when trying to fetch channel ${channelId}`);
+        return null;
+      }
+      
       return await this.guild.channels.fetch(channelId);
     } catch (error) {
       logger.error(`Error fetching channel ${channelId}:`, error);
