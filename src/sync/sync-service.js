@@ -3,6 +3,7 @@ const discordBot = require('../bot/client');
 const repository = require('../database/repository');
 const TicketFormatter = require('../whmcs/ticket-formatter');
 const logger = require('../utils/logger');
+const attachmentHandler = require('../utils/attachment-handler');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const console = require('../utils/console-logger');
 
@@ -265,17 +266,50 @@ class SyncService {
           const isAdmin = reply.admin !== '';
           const replyEmbed = TicketFormatter.createReplyEmbed(reply, isAdmin);
           
-          const message = await channel.send({ embeds: [replyEmbed] });
+          let messageOptions = { embeds: [replyEmbed] };
+          let processedAttachments = [];
           
-          await repository.createMessageSync({
-            whmcsTicketId: ticket.tid,
-            whmcsReplyId: replyId,
-            discordMessageId: message.id,
-            direction: 'whmcs_to_discord'
-          });
+          // 處理附件 - 使用新的 GetTicketAttachment API
+          if (reply.attachments && reply.attachments.length > 0) {
+            try {
+              console.log(`📎 Processing ${reply.attachments.length} attachments for reply ${replyId} using WHMCS API`);
+              processedAttachments = await attachmentHandler.processAttachments(
+                reply.attachments, 
+                whmcsApi, 
+                ticket.tid,
+                replyId
+              );
+              
+              if (processedAttachments.length > 0) {
+                messageOptions.files = processedAttachments.map(a => a.attachment);
+                console.log(`📎 Successfully processed ${processedAttachments.length} attachments`);
+              } else {
+                console.log(`📎 No attachments could be processed - will show as links instead`);
+              }
+            } catch (error) {
+              logger.error(`Error processing attachments for reply ${replyId}:`, error);
+              console.warn(`⚠️ Failed to process attachments for reply ${replyId} - will show as links`);
+            }
+          }
           
-          console.log(`📨 Synced reply ${replyId} from WHMCS to Discord for ticket ${ticket.tid}`);
-          logger.info(`Synced reply ${replyId} from WHMCS to Discord`);
+          try {
+            const message = await channel.send(messageOptions);
+            
+            await repository.createMessageSync({
+              whmcsTicketId: ticket.tid,
+              whmcsReplyId: replyId,
+              discordMessageId: message.id,
+              direction: 'whmcs_to_discord'
+            });
+            
+            console.log(`📨 Synced reply ${replyId} from WHMCS to Discord for ticket ${ticket.tid}`);
+            logger.info(`Synced reply ${replyId} from WHMCS to Discord`);
+          } finally {
+            // 清理臨時附件檔案
+            if (processedAttachments.length > 0) {
+              await attachmentHandler.cleanupAttachments(processedAttachments);
+            }
+          }
         }
       }
     } catch (error) {
@@ -360,6 +394,13 @@ class SyncService {
         
         console.log(`✅ Periodic sync completed - checked ${activeTickets.length} active tickets`);
         logger.info('Periodic sync completed');
+        
+        // 清理臨時附件檔案
+        try {
+          await attachmentHandler.cleanupTempDir();
+        } catch (error) {
+          logger.warn('Error during temp file cleanup:', error);
+        }
       } catch (error) {
         console.error(`❌ Error in periodic sync: ${error.message}`);
         logger.error('Error in periodic sync:', error);

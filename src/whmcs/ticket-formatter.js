@@ -60,9 +60,15 @@ class TicketFormatter {
       .setTimestamp(new Date(reply.date));
 
     if (reply.attachments && reply.attachments.length > 0) {
+      const attachmentInfo = reply.attachments.map(a => {
+        const filename = a.filename || a.name || 'Unknown file';
+        const size = a.size ? ` (${this.formatFileSize(a.size)})` : '';
+        return `📎 ${filename}${size}`;
+      }).join('\n');
+      
       embed.addFields({ 
-        name: 'Attachments', 
-        value: reply.attachments.map(a => `[${a.filename}](${a.url})`).join('\n'),
+        name: `Attachments (${reply.attachments.length})`, 
+        value: attachmentInfo,
         inline: false 
       });
     }
@@ -129,6 +135,16 @@ class TicketFormatter {
       department: match[1],
       ticketId: match[2]
     };
+  }
+
+  static formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 }
 
