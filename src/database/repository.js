@@ -157,6 +157,17 @@ class Repository {
       throw error;
     }
   }
+
+  async getMessageSyncsByTicketId(whmcsTicketId) {
+    try {
+      return await MessageSync.findAll({
+        where: { whmcsTicketId }
+      });
+    } catch (error) {
+      logger.error('Error getting message syncs by ticket ID:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new Repository();

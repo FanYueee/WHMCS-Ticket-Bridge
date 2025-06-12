@@ -213,7 +213,11 @@ class SyncService {
           await channel.send({ embeds: [statusEmbed] });
           
           if (ticket.status === 'Closed') {
-            await discordBot.archiveChannel(mapping.discordChannelId);
+            // Delete channel and clean up database records
+            await discordBot.deleteChannel(mapping.discordChannelId);
+            await this.cleanupTicketData(ticket.tid);
+            logger.info(`Deleted channel and cleaned up data for closed ticket ${ticket.tid}`);
+            return; // Don't update mapping since we're deleting everything
           }
         }
       }
@@ -349,16 +353,17 @@ class SyncService {
       logger.info(`Found ${tickets.length} tickets from WHMCS API`);
       
       for (const ticketSummary of tickets) {
+        // 使用 tid (票務號碼) 而不是 id (內部數字 ID)
+        const ticketId = ticketSummary.tid || ticketSummary.id;
+        
+        // 檢查是否已經有對應的映射
+        const existingMapping = await repository.getTicketMappingByWhmcsId(ticketId);
+        
         if (['Open', 'Answered', 'Customer-Reply'].includes(ticketSummary.status)) {
-          // 使用 tid (票務號碼) 而不是 id (內部數字 ID)
-          const ticketId = ticketSummary.tid || ticketSummary.id;
-          
-          // 檢查是否已經有對應的映射
-          const existingMapping = await repository.getTicketMappingByWhmcsId(ticketId);
           
           if (!existingMapping) {
-            // 先驗證票務是否真的存在，再創建頻道
-            logger.info(`Checking accessibility of new ticket ${ticketId}`);
+            // 先驗證票務是否真的存在，再創建頻道 (新票務或重新開啟的票務)
+            logger.info(`Checking accessibility of ticket ${ticketId} (new or reopened)`);
             try {
               const ticketDetails = await whmcsApi.getTicket(ticketId);
               logger.info(`Ticket ${ticketId} is accessible, creating channel`);
@@ -378,15 +383,33 @@ class SyncService {
               }
             }
           } else {
-            // 現有票務也需要同步可能遺漏的回覆
-            logger.debug(`Ticket ${ticketId} already has mapping, checking for missing replies`);
+            // 現有票務也需要同步可能遺漏的回覆和狀態更新
+            logger.debug(`Ticket ${ticketId} already has mapping, checking for updates`);
             try {
               const ticketDetails = await whmcsApi.getTicket(ticketId);
               ticketDetails.internalId = ticketSummary.id || ticketSummary.ticketid;
-              await this.syncTicketReplies(ticketDetails);
+              
+              // 檢查狀態是否需要更新
+              await this.updateExistingTicket(ticketDetails, existingMapping);
+              
+              // 如果票務未被刪除，同步回覆
+              const stillExists = await repository.getTicketMappingByWhmcsId(ticketId);
+              if (stillExists) {
+                await this.syncTicketReplies(ticketDetails);
+              }
             } catch (error) {
-              logger.error(`Error syncing replies for existing ticket ${ticketId}:`, error);
+              logger.error(`Error syncing existing ticket ${ticketId}:`, error);
             }
+          }
+        } else if (ticketSummary.status === 'Closed' && existingMapping) {
+          // 處理已關閉的票務，刪除對應的頻道和資料
+          logger.info(`Ticket ${ticketId} is closed, cleaning up Discord channel and data`);
+          try {
+            await discordBot.deleteChannel(existingMapping.discordChannelId);
+            await this.cleanupTicketData(ticketId);
+            console.log(`🗑️ Deleted channel and cleaned up data for closed ticket ${ticketId}`);
+          } catch (error) {
+            logger.error(`Error cleaning up closed ticket ${ticketId}:`, error);
           }
         }
       }
@@ -438,6 +461,24 @@ class SyncService {
     await runSync();
     
     setInterval(runSync, interval);
+  }
+
+  async cleanupTicketData(ticketId) {
+    try {
+      // Delete all message sync records for this ticket
+      const messageSyncs = await repository.getMessageSyncsByTicketId(ticketId);
+      for (const messageSync of messageSyncs) {
+        await repository.deleteMessageSync(messageSync.id);
+      }
+      
+      // Delete the ticket mapping
+      await repository.deleteTicketMapping(ticketId);
+      
+      logger.info(`Cleaned up all data for ticket ${ticketId}`);
+    } catch (error) {
+      logger.error(`Error cleaning up ticket data for ${ticketId}:`, error);
+      throw error;
+    }
   }
 }
 

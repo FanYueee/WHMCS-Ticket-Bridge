@@ -193,6 +193,23 @@ class DiscordBot {
     }
   }
 
+  async deleteChannel(channelId) {
+    try {
+      const channel = await this.getChannel(channelId);
+      if (!channel) {
+        logger.warn(`Channel ${channelId} not found for deletion`);
+        return;
+      }
+      
+      const channelName = channel.name;
+      await channel.delete();
+      logger.info(`Deleted channel: ${channelName}`);
+    } catch (error) {
+      logger.error(`Error deleting channel ${channelId}:`, error);
+      throw error;
+    }
+  }
+
   isStaffMember(member) {
     return member.roles.cache.has(config.discord.staffRoleId);
   }

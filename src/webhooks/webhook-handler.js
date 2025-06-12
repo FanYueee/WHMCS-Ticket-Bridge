@@ -101,11 +101,13 @@ class WebhookHandler {
       
       if (mapping) {
         const discordBot = require('../bot/client');
-        await discordBot.archiveChannel(mapping.discordChannelId);
+        const syncService = require('../sync/sync-service');
         
-        await repository.updateTicketMapping(ticketId, {
-          status: 'Closed'
-        });
+        // Delete channel and clean up database records
+        await discordBot.deleteChannel(mapping.discordChannelId);
+        await syncService.cleanupTicketData(ticketId);
+        
+        logger.info(`Deleted channel and cleaned up data for closed ticket ${ticketId}`);
       }
     } catch (error) {
       logger.error(`Error handling ticket closed: ${ticketId}`, error);

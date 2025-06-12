@@ -43,10 +43,17 @@ class MessageHandler {
         await this.handleButtonInteraction(interaction);
       } catch (error) {
         logger.error('Error handling button interaction:', error);
-        await interaction.reply({ 
-          content: 'An error occurred while processing your request.', 
-          ephemeral: true 
-        });
+        // Only try to reply if we haven't already replied or deferred
+        if (!interaction.replied && !interaction.deferred) {
+          try {
+            await interaction.reply({ 
+              content: 'An error occurred while processing your request.', 
+              ephemeral: true 
+            });
+          } catch (replyError) {
+            logger.error('Failed to reply to interaction after error:', replyError);
+          }
+        }
       }
     });
   }
@@ -216,21 +223,45 @@ class MessageHandler {
       }
       
       const ticketMapping = await repository.getTicketMappingByWhmcsId(ticketId);
-      if (ticketMapping && ticketMapping.whmcsInternalId) {
-        await whmcsApi.updateTicket(ticketMapping.whmcsInternalId, { status: 'Closed' });
-        await repository.updateTicketMapping(ticketId, { status: 'Closed' });
-        await discordBot.archiveChannel(ticketMapping.discordChannelId);
-      } else {
-        throw new Error('Ticket mapping not found or missing internal ID');
+      if (!ticketMapping || !ticketMapping.whmcsInternalId) {
+        await interaction.reply({ 
+          content: 'Ticket mapping not found or missing internal ID.', 
+          ephemeral: true 
+        });
+        return;
       }
+
+      // Update ticket status in WHMCS first
+      await whmcsApi.updateTicket(ticketMapping.whmcsInternalId, { status: 'Closed' });
       
+      // Reply to interaction BEFORE deleting the channel
       await interaction.reply({ 
-        content: `Ticket #${ticketId} has been closed.`, 
+        content: `Ticket #${ticketId} has been closed and channel will be deleted.`, 
         ephemeral: true 
       });
+      
+      // Small delay to ensure the reply is sent
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Delete channel and clean up database records
+      const syncService = require('../sync/sync-service');
+      await discordBot.deleteChannel(ticketMapping.discordChannelId);
+      await syncService.cleanupTicketData(ticketId);
+      
+      logger.info(`Deleted channel and cleaned up data for closed ticket ${ticketId}`);
     } catch (error) {
       logger.error('Error closing ticket:', error);
-      throw error;
+      // Try to reply to interaction if we haven't already
+      if (!interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.reply({ 
+            content: 'An error occurred while closing the ticket.', 
+            ephemeral: true 
+          });
+        } catch (replyError) {
+          logger.error('Failed to reply to interaction after error:', replyError);
+        }
+      }
     }
   }
 
