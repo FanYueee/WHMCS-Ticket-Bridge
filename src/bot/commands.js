@@ -195,8 +195,19 @@ class Commands {
       
       const adminUsername = interaction.options.getString('admin');
       
-      await whmcsApi.updateTicket(ticketMapping.whmcsTicketId, {
-        flag: adminUsername
+      const adminUsers = await whmcsApi.getAdminUsers();
+      const adminUser = adminUsers.find(admin => admin.username === adminUsername);
+      
+      if (!adminUser) {
+        await interaction.reply({
+          content: `Admin user "${adminUsername}" not found.`,
+          ephemeral: true
+        });
+        return;
+      }
+      
+      await whmcsApi.updateTicket(ticketMapping.whmcsInternalId, {
+        flag: adminUser.id
       });
       
       await interaction.reply({
