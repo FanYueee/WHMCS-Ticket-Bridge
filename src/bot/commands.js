@@ -237,7 +237,7 @@ class Commands {
       
       const priority = interaction.options.getString('level');
       
-      await whmcsApi.updateTicket(ticketMapping.whmcsTicketId, {
+      await whmcsApi.updateTicket(ticketMapping.whmcsInternalId, {
         priority: priority
       });
       
