@@ -216,6 +216,7 @@ class SyncService {
           );
           
           await channel.send({ embeds: [statusEmbed] });
+          logger.info(`Status change detected for ticket ${ticket.tid}: ${mapping.status} → ${ticket.status}`);
           
           if (ticket.status === 'Closed') {
             // Delete channel and clean up database records
@@ -364,7 +365,7 @@ class SyncService {
         // 檢查是否已經有對應的映射
         const existingMapping = await repository.getTicketMappingByWhmcsId(ticketId);
         
-        if (['Open', 'Answered', 'Customer-Reply'].includes(ticketSummary.status)) {
+        if (['Open', 'Answered', 'Customer-Reply', 'On Hold'].includes(ticketSummary.status)) {
           
           if (!existingMapping) {
             // 先驗證票務是否真的存在，再創建頻道 (新票務或重新開啟的票務)

@@ -197,9 +197,6 @@ class MessageHandler {
       case 'close':
         await this.handleCloseTicket(interaction, ticketId);
         break;
-      case 'reopen':
-        await this.handleReopenTicket(interaction, ticketId);
-        break;
       case 'hold':
         await this.handleHoldTicket(interaction, ticketId);
         break;
@@ -265,31 +262,6 @@ class MessageHandler {
     }
   }
 
-  async handleReopenTicket(interaction, ticketId) {
-    try {
-      const member = await interaction.guild.members.fetch(interaction.user.id);
-      if (!discordBot.isStaffMember(member)) {
-        await interaction.reply({ 
-          content: 'Only staff members can reopen tickets.', 
-          ephemeral: true 
-        });
-        return;
-      }
-      
-      await whmcsApi.updateTicket(ticketId, { status: 'Open' });
-      
-      await repository.updateTicketMapping(ticketId, { status: 'Open' });
-      
-      await interaction.reply({ 
-        content: `Ticket #${ticketId} has been reopened.`, 
-        ephemeral: true 
-      });
-    } catch (error) {
-      logger.error('Error reopening ticket:', error);
-      throw error;
-    }
-  }
-
   async handleHoldTicket(interaction, ticketId) {
     try {
       const member = await interaction.guild.members.fetch(interaction.user.id);
@@ -301,9 +273,19 @@ class MessageHandler {
         return;
       }
       
-      await whmcsApi.updateTicket(ticketId, { status: 'On Hold' });
+      const ticketMapping = await repository.getTicketMappingByWhmcsId(ticketId);
+      if (!ticketMapping || !ticketMapping.whmcsInternalId) {
+        await interaction.reply({ 
+          content: 'Ticket mapping not found or missing internal ID.', 
+          ephemeral: true 
+        });
+        return;
+      }
       
-      await repository.updateTicketMapping(ticketId, { status: 'On Hold' });
+      await whmcsApi.updateTicket(ticketMapping.whmcsInternalId, { status: 'On Hold' });
+      
+      // 不立即更新資料庫，讓下次同步時檢測到狀態變化
+      // await repository.updateTicketMapping(ticketId, { status: 'On Hold' });
       
       await interaction.reply({ 
         content: `Ticket #${ticketId} has been put on hold.`, 
@@ -311,7 +293,17 @@ class MessageHandler {
       });
     } catch (error) {
       logger.error('Error putting ticket on hold:', error);
-      throw error;
+      // Try to reply to interaction if we haven't already
+      if (!interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.reply({ 
+            content: 'An error occurred while putting the ticket on hold.', 
+            ephemeral: true 
+          });
+        } catch (replyError) {
+          logger.error('Failed to reply to interaction after error:', replyError);
+        }
+      }
     }
   }
 }

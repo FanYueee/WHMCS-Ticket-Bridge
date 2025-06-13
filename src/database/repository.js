@@ -160,7 +160,7 @@ class Repository {
     try {
       return await TicketMapping.findAll({
         where: {
-          status: ['Open', 'Answered', 'Customer-Reply']
+          status: ['Open', 'Answered', 'Customer-Reply', 'On Hold']
         }
       });
     } catch (error) {
