@@ -295,7 +295,7 @@ class Commands {
     const existing = await repository.getDepartmentRoleMapping(department.id, role.id);
     if (existing) {
       await interaction.editReply({
-        content: `部門 "${departmentName}" 與身分組 "${role.name}" 的權限映射已存在`
+        content: `部門 "${departmentName}" 與身分組 <@&${role.id}> 的權限映射已存在`
       });
       return;
     }
@@ -308,8 +308,11 @@ class Commands {
       discordRoleName: role.name
     });
     
+    // 更新所有該部門的現有頻道權限
+    await this.updateExistingChannelPermissions(department.id, departmentName);
+    
     await interaction.editReply({
-      content: `✅ 成功新增權限映射:\n部門: ${departmentName}\n身分組: ${role.name}`
+      content: `✅ 成功新增權限映射:\n部門: ${departmentName}\n身分組: <@&${role.id}>\n\n🔄 已同步更新所有相關頻道權限`
     });
   }
 
@@ -332,7 +335,7 @@ class Commands {
     const existing = await repository.getDepartmentRoleMapping(department.id, role.id);
     if (!existing) {
       await interaction.editReply({
-        content: `部門 "${departmentName}" 與身分組 "${role.name}" 的權限映射不存在`
+        content: `部門 "${departmentName}" 與身分組 <@&${role.id}> 的權限映射不存在`
       });
       return;
     }
@@ -341,8 +344,11 @@ class Commands {
     const deleted = await repository.deleteDepartmentRoleMapping(department.id, role.id);
     
     if (deleted) {
+      // 更新所有該部門的現有頻道權限
+      await this.updateExistingChannelPermissions(department.id, departmentName);
+      
       await interaction.editReply({
-        content: `✅ 成功移除權限映射:\n部門: ${departmentName}\n身分組: ${role.name}`
+        content: `✅ 成功移除權限映射:\n部門: ${departmentName}\n身分組: <@&${role.id}>\n\n🔄 已同步更新所有相關頻道權限`
       });
     } else {
       await interaction.editReply({
@@ -387,19 +393,60 @@ class Commands {
       if (!groupedMappings[mapping.departmentName]) {
         groupedMappings[mapping.departmentName] = [];
       }
-      groupedMappings[mapping.departmentName].push(mapping.discordRoleName);
+      groupedMappings[mapping.departmentName].push({
+        name: mapping.discordRoleName,
+        id: mapping.discordRoleId
+      });
     });
     
     let content = '📋 **部門權限設定列表**\n\n';
     Object.entries(groupedMappings).forEach(([dept, roles]) => {
       content += `**${dept}**\n`;
-      roles.forEach(roleName => {
-        content += `└ ${roleName}\n`;
+      roles.forEach(role => {
+        content += `└ <@&${role.id}>\n`;
       });
       content += '\n';
     });
     
     await interaction.editReply({ content });
+  }
+
+
+  async updateExistingChannelPermissions(departmentId, departmentName) {
+    try {
+      // 獲取該部門的所有票務映射
+      const ticketMappings = await repository.getTicketMappingsByDepartmentId(departmentId);
+      
+      if (ticketMappings.length === 0) {
+        logger.info(`No existing channels found for department: ${departmentName}`);
+        return;
+      }
+      
+      // 獲取該部門的所有角色映射
+      const departmentRoleMappings = await repository.getDepartmentRoleMappingsByDepartmentId(departmentId);
+      const departmentRoles = departmentRoleMappings.map(mapping => mapping.discordRoleId);
+      
+      const discordBot = require('./client');
+      let updatedCount = 0;
+      let failedCount = 0;
+      
+      // 批量更新所有相關頻道的權限
+      for (const mapping of ticketMappings) {
+        try {
+          await discordBot.updateChannelPermissions(mapping.discordChannelId, departmentRoles);
+          updatedCount++;
+        } catch (error) {
+          logger.error(`Failed to update permissions for channel ${mapping.discordChannelId}:`, error);
+          failedCount++;
+        }
+      }
+      
+      logger.info(`Updated permissions for ${updatedCount} channels in department "${departmentName}". Failed: ${failedCount}`);
+      
+    } catch (error) {
+      logger.error('Error updating existing channel permissions:', error);
+      throw error;
+    }
   }
 
   async wtbAutocomplete(interaction) {

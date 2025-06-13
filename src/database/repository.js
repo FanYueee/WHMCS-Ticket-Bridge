@@ -33,6 +33,17 @@ class Repository {
     }
   }
 
+  async getTicketMappingsByDepartmentId(departmentId) {
+    try {
+      return await TicketMapping.findAll({
+        where: { departmentId }
+      });
+    } catch (error) {
+      logger.error('Error getting ticket mappings by department ID:', error);
+      throw error;
+    }
+  }
+
   async updateTicketMapping(whmcsTicketId, updates) {
     try {
       const [updatedCount] = await TicketMapping.update(updates, {

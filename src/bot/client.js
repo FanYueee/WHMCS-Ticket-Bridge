@@ -240,6 +240,47 @@ class DiscordBot {
     }
   }
 
+  async updateChannelPermissions(channelId, departmentRoles = []) {
+    try {
+      const channel = await this.getChannel(channelId);
+      if (!channel) {
+        throw new Error('Channel not found');
+      }
+      
+      // 清除現有的部門角色權限（保留基本權限）
+      const currentOverwrites = channel.permissionOverwrites.cache;
+      const rolesToRemove = [];
+      
+      currentOverwrites.forEach((overwrite, id) => {
+        // 保留 @everyone 和主要客服角色的權限，移除其他角色權限
+        if (id !== this.guild.id && id !== config.discord.staffRoleId) {
+          rolesToRemove.push(id);
+        }
+      });
+      
+      // 移除舊的部門角色權限
+      for (const roleId of rolesToRemove) {
+        await channel.permissionOverwrites.delete(roleId);
+      }
+      
+      // 添加新的部門角色權限
+      for (const roleId of departmentRoles) {
+        await channel.permissionOverwrites.edit(roleId, {
+          ViewChannel: true,
+          SendMessages: true,
+          ReadMessageHistory: true,
+          ManageMessages: true
+        });
+      }
+      
+      logger.info(`Updated permissions for channel ${channel.name} with ${departmentRoles.length} department roles`);
+      return channel;
+    } catch (error) {
+      logger.error(`Error updating channel permissions:`, error);
+      throw error;
+    }
+  }
+
   isStaffMember(member) {
     return member.roles.cache.has(config.discord.staffRoleId);
   }
