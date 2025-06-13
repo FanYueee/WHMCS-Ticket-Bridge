@@ -1,4 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
+const statusManager = require('../utils/status-manager');
 
 class TicketFormatter {
   static getPriorityColor(priority) {
@@ -11,25 +12,19 @@ class TicketFormatter {
     return colors[priority] || 0x6c757d; // Default gray
   }
 
-  static getStatusEmoji(status) {
-    const emojis = {
-      'Open': '🟢',
-      'Answered': '💬',
-      'Customer-Reply': '📨',
-      'Closed': '🔒',
-      'On Hold': '⏸️',
-      'In Progress': '🔄'
-    };
-    return emojis[status] || '❓';
+  static async getStatusEmoji(status) {
+    return await statusManager.getStatusEmoji(status);
   }
 
-  static createTicketEmbed(ticket, client = null) {
+  static async createTicketEmbed(ticket, client = null) {
+    const statusEmoji = await this.getStatusEmoji(ticket.status);
+    
     const embed = new EmbedBuilder()
       .setTitle(`Ticket #${ticket.tid} - ${ticket.subject}`)
       .setColor(this.getPriorityColor(ticket.priority))
       .setTimestamp(new Date(ticket.date))
       .addFields(
-        { name: 'Status', value: `${this.getStatusEmoji(ticket.status)} ${ticket.status}`, inline: true },
+        { name: 'Status', value: `${statusEmoji} ${ticket.status}`, inline: true },
         { name: 'Priority', value: ticket.priority || 'Medium', inline: true },
         { name: 'Department', value: ticket.deptname || 'General', inline: true }
       );
@@ -76,14 +71,17 @@ class TicketFormatter {
     return embed;
   }
 
-  static createStatusUpdateEmbed(ticketId, oldStatus, newStatus, updatedBy = 'System') {
+  static async createStatusUpdateEmbed(ticketId, oldStatus, newStatus, updatedBy = 'System') {
+    const oldStatusEmoji = await this.getStatusEmoji(oldStatus);
+    const newStatusEmoji = await this.getStatusEmoji(newStatus);
+    
     return new EmbedBuilder()
       .setColor(0xffc107)
       .setTitle('Ticket Status Updated')
       .setDescription(`Ticket #${ticketId} status changed`)
       .addFields(
-        { name: 'From', value: `${this.getStatusEmoji(oldStatus)} ${oldStatus}`, inline: true },
-        { name: 'To', value: `${this.getStatusEmoji(newStatus)} ${newStatus}`, inline: true },
+        { name: 'From', value: `${oldStatusEmoji} ${oldStatus}`, inline: true },
+        { name: 'To', value: `${newStatusEmoji} ${newStatus}`, inline: true },
         { name: 'Updated By', value: updatedBy, inline: true }
       )
       .setTimestamp();

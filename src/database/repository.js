@@ -1,5 +1,6 @@
 const { TicketMapping, DepartmentMapping, DepartmentRoleMapping, MessageSync } = require('./models');
 const logger = require('../utils/logger');
+const statusManager = require('../utils/status-manager');
 
 class Repository {
   async createTicketMapping(data) {
@@ -158,9 +159,10 @@ class Repository {
 
   async getAllActiveTickets() {
     try {
+      const activeStatusNames = await statusManager.getActiveStatusNames();
       return await TicketMapping.findAll({
         where: {
-          status: ['Open', 'Answered', 'Customer-Reply', 'On Hold']
+          status: activeStatusNames
         }
       });
     } catch (error) {

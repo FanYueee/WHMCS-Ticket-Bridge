@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const attachmentHandler = require('../utils/attachment-handler');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const console = require('../utils/console-logger');
+const statusManager = require('../utils/status-manager');
 
 class SyncService {
   async syncDepartments() {
@@ -156,7 +157,7 @@ class SyncService {
         }
       }
       
-      const ticketEmbed = TicketFormatter.createTicketEmbed(ticket, client);
+      const ticketEmbed = await TicketFormatter.createTicketEmbed(ticket, client);
       
       const actionRow = new ActionRowBuilder()
         .addComponents(
@@ -209,7 +210,7 @@ class SyncService {
         const channel = await discordBot.getChannel(mapping.discordChannelId);
         
         if (channel) {
-          const statusEmbed = TicketFormatter.createStatusUpdateEmbed(
+          const statusEmbed = await TicketFormatter.createStatusUpdateEmbed(
             ticket.tid,
             mapping.status,
             ticket.status
@@ -218,7 +219,7 @@ class SyncService {
           await channel.send({ embeds: [statusEmbed] });
           logger.info(`Status change detected for ticket ${ticket.tid}: ${mapping.status} → ${ticket.status}`);
           
-          if (ticket.status === 'Closed') {
+          if (statusManager.isClosedStatus(ticket.status)) {
             // Delete channel and clean up database records
             await discordBot.deleteChannel(mapping.discordChannelId);
             await this.cleanupTicketData(ticket.tid);

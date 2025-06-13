@@ -172,6 +172,19 @@ class WhmcsApi {
     }
   }
 
+  async getSupportStatuses(departmentId = '') {
+    try {
+      const params = {};
+      if (departmentId) params.deptid = departmentId;
+      
+      const response = await this.makeRequest('GetSupportStatuses', params);
+      return response.statuses || [];
+    } catch (error) {
+      logger.error('Error fetching support statuses:', error);
+      throw error;
+    }
+  }
+
   async openTicket(departmentId, subject, message, priority, clientId = '', contactId = '') {
     try {
       const params = {

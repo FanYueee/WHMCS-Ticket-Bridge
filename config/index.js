@@ -24,5 +24,12 @@ module.exports = {
     logLevel: process.env.LOG_LEVEL || 'info',
     nodeEnv: process.env.NODE_ENV || 'development',
     syncInterval: parseInt(process.env.SYNC_INTERVAL || '300000')
+  },
+  statusMapping: {
+    // 核心狀態映射 - 用戶可根據 WHMCS 設定修改這些值
+    closed: process.env.WHMCS_STATUS_CLOSED || 'Closed',
+    open: process.env.WHMCS_STATUS_OPEN || 'Open', 
+    answered: process.env.WHMCS_STATUS_ANSWERED || 'Answered',
+    customerReply: process.env.WHMCS_STATUS_CUSTOMER_REPLY || 'Customer-Reply'
   }
 };
