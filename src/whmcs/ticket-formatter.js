@@ -51,7 +51,7 @@ class TicketFormatter {
 
   static createReplyEmbed(reply, isAdmin = false) {
     const embed = new EmbedBuilder()
-      .setColor(isAdmin ? 0x0099ff : 0x7289da)
+      .setColor(isAdmin ? 0x28a745 : 0x007bff)
       .setAuthor({ 
         name: reply.name || (isAdmin ? 'Staff' : 'Client'),
         iconURL: isAdmin ? 'https://cdn.discordapp.com/embed/avatars/0.png' : 'https://cdn.discordapp.com/embed/avatars/1.png'
