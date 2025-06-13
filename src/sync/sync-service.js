@@ -366,7 +366,8 @@ class SyncService {
         // 檢查是否已經有對應的映射
         const existingMapping = await repository.getTicketMappingByWhmcsId(ticketId);
         
-        if (['Open', 'Answered', 'Customer-Reply', 'On Hold'].includes(ticketSummary.status)) {
+        const activeStatusNames = await statusManager.getActiveStatusNames();
+        if (activeStatusNames.includes(ticketSummary.status)) {
           
           if (!existingMapping) {
             // 先驗證票務是否真的存在，再創建頻道 (新票務或重新開啟的票務)
@@ -408,7 +409,7 @@ class SyncService {
               logger.error(`Error syncing existing ticket ${ticketId}:`, error);
             }
           }
-        } else if (ticketSummary.status === 'Closed' && existingMapping) {
+        } else if (statusManager.isClosedStatus(ticketSummary.status) && existingMapping) {
           // 處理已關閉的票務，刪除對應的頻道和資料
           logger.info(`Ticket ${ticketId} is closed, cleaning up Discord channel and data`);
           try {

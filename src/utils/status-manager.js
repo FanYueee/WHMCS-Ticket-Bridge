@@ -18,7 +18,16 @@ class StatusManager {
       }
 
       // 從 WHMCS 獲取所有狀態
-      const statuses = await whmcsApi.getSupportStatuses();
+      const response = await whmcsApi.getSupportStatuses();
+      logger.info('WHMCS getSupportStatuses response:', JSON.stringify(response));
+      
+      // 檢查回應格式 - WHMCS 返回的是數組
+      if (!Array.isArray(response)) {
+        logger.warn('Unexpected getSupportStatuses response format:', typeof response);
+        return this.getBasicStatuses();
+      }
+      
+      const statuses = response;
       
       // 快取 10 分鐘
       this.statusCache = statuses;
@@ -107,18 +116,29 @@ class StatusManager {
   async getActiveStatusNames() {
     try {
       const allStatuses = await this.getAllStatuses();
+      
+      // 確保 allStatuses 是數組
+      if (!Array.isArray(allStatuses)) {
+        logger.warn('getAllStatuses() returned non-array:', typeof allStatuses);
+        return this.getBasicActiveStatusNames();
+      }
+      
       return allStatuses
         .map(s => s.title)
         .filter(status => this.isActiveStatus(status));
     } catch (error) {
       logger.error('Error getting active status names:', error);
-      // 返回基本的活躍狀態
-      return [
-        config.statusMapping.open,
-        config.statusMapping.answered,
-        config.statusMapping.customerReply
-      ];
+      return this.getBasicActiveStatusNames();
     }
+  }
+
+  // 獲取基本活躍狀態名稱（備案）
+  getBasicActiveStatusNames() {
+    return [
+      config.statusMapping.open,
+      config.statusMapping.answered,
+      config.statusMapping.customerReply
+    ];
   }
 
   // 清除快取

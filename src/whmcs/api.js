@@ -178,7 +178,7 @@ class WhmcsApi {
       if (departmentId) params.deptid = departmentId;
       
       const response = await this.makeRequest('GetSupportStatuses', params);
-      return response.statuses || [];
+      return response.statuses?.status || [];  // 正確的路徑：statuses.status
     } catch (error) {
       logger.error('Error fetching support statuses:', error);
       throw error;
