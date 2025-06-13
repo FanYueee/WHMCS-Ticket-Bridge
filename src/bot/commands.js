@@ -40,9 +40,11 @@ class Commands {
             option.setName('admin')
               .setDescription('The admin username to assign')
               .setRequired(true)
+              .setAutocomplete(true)
           )
           .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-        execute: this.assignTicket.bind(this)
+        execute: this.assignTicket.bind(this),
+        autocomplete: this.assignTicketAutocomplete.bind(this)
       },
       {
         data: new SlashCommandBuilder()
@@ -467,6 +469,35 @@ class Commands {
       }
     } catch (error) {
       logger.error('Error in wtb autocomplete:', error);
+      await interaction.respond([]);
+    }
+  }
+
+  async assignTicketAutocomplete(interaction) {
+    try {
+      const focusedOption = interaction.options.getFocused(true);
+      
+      if (focusedOption.name === 'admin') {
+        const adminUsers = await whmcsApi.getAdminUsers();
+        const filtered = adminUsers
+          .filter(admin => {
+            const searchTerm = focusedOption.value.toLowerCase();
+            return admin.username.toLowerCase().includes(searchTerm) || 
+                   (admin.firstname && admin.firstname.toLowerCase().includes(searchTerm)) ||
+                   (admin.lastname && admin.lastname.toLowerCase().includes(searchTerm));
+          })
+          .slice(0, 25) // Discord 限制最多 25 個選項
+          .map(admin => ({
+            name: admin.firstname && admin.lastname ? 
+                  `${admin.username} (${admin.firstname} ${admin.lastname})` : 
+                  admin.username,
+            value: admin.username
+          }));
+        
+        await interaction.respond(filtered);
+      }
+    } catch (error) {
+      logger.error('Error in assign ticket autocomplete:', error);
       await interaction.respond([]);
     }
   }
