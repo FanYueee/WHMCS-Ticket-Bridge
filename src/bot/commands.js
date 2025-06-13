@@ -54,15 +54,11 @@ class Commands {
             option.setName('level')
               .setDescription('The new priority level')
               .setRequired(true)
-              .addChoices(
-                { name: 'Low', value: 'Low' },
-                { name: 'Medium', value: 'Medium' },
-                { name: 'High', value: 'High' },
-                { name: 'Urgent', value: 'Urgent' }
-              )
+              .setAutocomplete(true)
           )
           .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-        execute: this.changePriority.bind(this)
+        execute: this.changePriority.bind(this),
+        autocomplete: this.priorityAutocomplete.bind(this)
       },
       {
         data: new SlashCommandBuilder()
@@ -510,6 +506,73 @@ class Commands {
     } catch (error) {
       logger.error('Error in assign ticket autocomplete:', error);
       await interaction.respond([]);
+    }
+  }
+
+  async priorityAutocomplete(interaction) {
+    try {
+      const focusedOption = interaction.options.getFocused(true);
+      
+      if (focusedOption.name === 'level') {
+        // 獲取系統中可用的優先級選項
+        const availablePriorities = await this.getAvailablePriorities();
+        
+        const filtered = availablePriorities
+          .filter(priority => priority.toLowerCase().includes(focusedOption.value.toLowerCase()))
+          .slice(0, 25)
+          .map(priority => ({
+            name: priority,
+            value: priority
+          }));
+        
+        await interaction.respond(filtered);
+      }
+    } catch (error) {
+      logger.error('Error in priority autocomplete:', error);
+      // 提供預設選項作為備案
+      await interaction.respond([
+        { name: 'Low', value: 'Low' },
+        { name: 'Medium', value: 'Medium' },
+        { name: 'High', value: 'High' }
+      ]);
+    }
+  }
+
+  async getAvailablePriorities() {
+    try {
+      // 使用快取避免頻繁查詢
+      if (this.priorityCache && this.priorityCache.expiry > Date.now()) {
+        return this.priorityCache.priorities;
+      }
+      
+      // 從現有票務中獲取所有使用過的優先級
+      const tickets = await whmcsApi.getAllTickets();
+      const prioritySet = new Set();
+      
+      tickets.forEach(ticket => {
+        if (ticket.priority && ticket.priority.trim()) {
+          prioritySet.add(ticket.priority.trim());
+        }
+      });
+      
+      // 確保至少有基本優先級選項
+      const priorities = Array.from(prioritySet);
+      if (priorities.length === 0) {
+        priorities.push('Low', 'Medium', 'High');
+      }
+      
+      // 快取結果 10 分鐘
+      this.priorityCache = {
+        priorities: priorities.sort(),
+        expiry: Date.now() + 10 * 60 * 1000
+      };
+      
+      logger.info(`Found ${priorities.length} available priority levels: ${priorities.join(', ')}`);
+      return priorities;
+    } catch (error) {
+      logger.error('Error getting available priorities:', error);
+      // 返回預設選項
+      return ['Low', 'Medium', 'High'];
     }
   }
 
