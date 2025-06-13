@@ -42,6 +42,25 @@ class DiscordBot {
     this.client.on('warn', (warning) => {
       logger.warn('Discord client warning:', warning);
     });
+
+    this.client.on('interactionCreate', async (interaction) => {
+      if (interaction.isAutocomplete()) {
+        const commands = require('./commands');
+        const commandMap = new Map();
+        commands.getCommands().forEach(cmd => {
+          commandMap.set(cmd.data.name, cmd);
+        });
+        
+        const command = commandMap.get(interaction.commandName);
+        if (command && command.autocomplete) {
+          try {
+            await command.autocomplete(interaction);
+          } catch (error) {
+            logger.error('Error handling autocomplete:', error);
+          }
+        }
+      }
+    });
   }
 
   async start() {
@@ -78,30 +97,41 @@ class DiscordBot {
     }
   }
 
-  async createTicketChannel(categoryId, channelName, topic = '') {
+  async createTicketChannel(categoryId, channelName, topic = '', departmentRoles = []) {
     try {
       if (!this.guild) {
         throw new Error('Discord bot is not connected to any guild');
       }
+      
+      // 基本權限設定
+      const permissionOverwrites = [
+        {
+          id: this.guild.id,
+          deny: ['ViewChannel']
+        },
+        {
+          id: config.discord.staffRoleId,
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages']
+        }
+      ];
+      
+      // 添加部門特定角色權限
+      departmentRoles.forEach(roleId => {
+        permissionOverwrites.push({
+          id: roleId,
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages']
+        });
+      });
       
       const channel = await this.guild.channels.create({
         name: channelName,
         type: 0, // ChannelType.GuildText
         parent: categoryId,
         topic: topic,
-        permissionOverwrites: [
-          {
-            id: this.guild.id,
-            deny: ['ViewChannel']
-          },
-          {
-            id: config.discord.staffRoleId,
-            allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages']
-          }
-        ]
+        permissionOverwrites: permissionOverwrites
       });
       
-      logger.info(`Created ticket channel: ${channel.name}`);
+      logger.info(`Created ticket channel: ${channel.name} with ${departmentRoles.length} department roles`);
       return channel;
     } catch (error) {
       logger.error('Error creating ticket channel:', error);

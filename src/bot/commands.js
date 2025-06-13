@@ -61,6 +61,49 @@ class Commands {
           )
           .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
         execute: this.changePriority.bind(this)
+      },
+      {
+        data: new SlashCommandBuilder()
+          .setName('wtb')
+          .setDescription('WHMCS Ticket Bridge 部門權限管理')
+          .addSubcommand(subcommand =>
+            subcommand
+              .setName('add')
+              .setDescription('新增部門身分組權限')
+              .addStringOption(option =>
+                option.setName('department')
+                  .setDescription('選擇部門')
+                  .setRequired(true)
+                  .setAutocomplete(true))
+              .addRoleOption(option =>
+                option.setName('role')
+                  .setDescription('選擇身分組')
+                  .setRequired(true)))
+          .addSubcommand(subcommand =>
+            subcommand
+              .setName('remove')
+              .setDescription('移除部門身分組權限')
+              .addStringOption(option =>
+                option.setName('department')
+                  .setDescription('選擇部門')
+                  .setRequired(true)
+                  .setAutocomplete(true))
+              .addRoleOption(option =>
+                option.setName('role')
+                  .setDescription('選擇身分組')
+                  .setRequired(true)))
+          .addSubcommand(subcommand =>
+            subcommand
+              .setName('list')
+              .setDescription('查看部門權限設定')
+              .addStringOption(option =>
+                option.setName('department')
+                  .setDescription('選擇特定部門 (可選)')
+                  .setRequired(false)
+                  .setAutocomplete(true)))
+          .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        execute: this.wtbCommand.bind(this),
+        autocomplete: this.wtbAutocomplete.bind(this)
       }
     ];
   }
@@ -209,6 +252,175 @@ class Commands {
         content: 'Failed to change priority.',
         ephemeral: true
       });
+    }
+  }
+
+  async wtbCommand(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+      const subcommand = interaction.options.getSubcommand();
+      
+      if (subcommand === 'add') {
+        await this.wtbAdd(interaction);
+      } else if (subcommand === 'remove') {
+        await this.wtbRemove(interaction);
+      } else if (subcommand === 'list') {
+        await this.wtbList(interaction);
+      }
+    } catch (error) {
+      logger.error('Error in wtb command:', error);
+      await interaction.editReply({
+        content: `操作失敗: ${error.message}`
+      });
+    }
+  }
+
+  async wtbAdd(interaction) {
+    const departmentName = interaction.options.getString('department');
+    const role = interaction.options.getRole('role');
+    
+    // 從部門名稱獲取部門ID
+    const departments = await whmcsApi.getSupportDepartments();
+    const department = departments.find(d => d.name === departmentName);
+    
+    if (!department) {
+      await interaction.editReply({
+        content: `找不到部門: ${departmentName}`
+      });
+      return;
+    }
+    
+    // 檢查是否已存在相同映射
+    const existing = await repository.getDepartmentRoleMapping(department.id, role.id);
+    if (existing) {
+      await interaction.editReply({
+        content: `部門 "${departmentName}" 與身分組 "${role.name}" 的權限映射已存在`
+      });
+      return;
+    }
+    
+    // 建立新的權限映射
+    await repository.createDepartmentRoleMapping({
+      whmcsDepartmentId: department.id,
+      departmentName: departmentName,
+      discordRoleId: role.id,
+      discordRoleName: role.name
+    });
+    
+    await interaction.editReply({
+      content: `✅ 成功新增權限映射:\n部門: ${departmentName}\n身分組: ${role.name}`
+    });
+  }
+
+  async wtbRemove(interaction) {
+    const departmentName = interaction.options.getString('department');
+    const role = interaction.options.getRole('role');
+    
+    // 從部門名稱獲取部門ID
+    const departments = await whmcsApi.getSupportDepartments();
+    const department = departments.find(d => d.name === departmentName);
+    
+    if (!department) {
+      await interaction.editReply({
+        content: `找不到部門: ${departmentName}`
+      });
+      return;
+    }
+    
+    // 檢查映射是否存在
+    const existing = await repository.getDepartmentRoleMapping(department.id, role.id);
+    if (!existing) {
+      await interaction.editReply({
+        content: `部門 "${departmentName}" 與身分組 "${role.name}" 的權限映射不存在`
+      });
+      return;
+    }
+    
+    // 刪除權限映射
+    const deleted = await repository.deleteDepartmentRoleMapping(department.id, role.id);
+    
+    if (deleted) {
+      await interaction.editReply({
+        content: `✅ 成功移除權限映射:\n部門: ${departmentName}\n身分組: ${role.name}`
+      });
+    } else {
+      await interaction.editReply({
+        content: `移除權限映射失敗`
+      });
+    }
+  }
+
+  async wtbList(interaction) {
+    const departmentName = interaction.options.getString('department');
+    
+    let mappings;
+    if (departmentName) {
+      // 查詢特定部門
+      const departments = await whmcsApi.getSupportDepartments();
+      const department = departments.find(d => d.name === departmentName);
+      
+      if (!department) {
+        await interaction.editReply({
+          content: `找不到部門: ${departmentName}`
+        });
+        return;
+      }
+      
+      mappings = await repository.getDepartmentRoleMappingsByDepartmentId(department.id);
+    } else {
+      // 查詢所有部門
+      mappings = await repository.getAllDepartmentRoleMappings();
+    }
+    
+    if (mappings.length === 0) {
+      const scope = departmentName ? `部門 "${departmentName}"` : '系統';
+      await interaction.editReply({
+        content: `${scope} 沒有設定任何權限映射`
+      });
+      return;
+    }
+    
+    // 整理顯示格式
+    const groupedMappings = {};
+    mappings.forEach(mapping => {
+      if (!groupedMappings[mapping.departmentName]) {
+        groupedMappings[mapping.departmentName] = [];
+      }
+      groupedMappings[mapping.departmentName].push(mapping.discordRoleName);
+    });
+    
+    let content = '📋 **部門權限設定列表**\n\n';
+    Object.entries(groupedMappings).forEach(([dept, roles]) => {
+      content += `**${dept}**\n`;
+      roles.forEach(roleName => {
+        content += `└ ${roleName}\n`;
+      });
+      content += '\n';
+    });
+    
+    await interaction.editReply({ content });
+  }
+
+  async wtbAutocomplete(interaction) {
+    try {
+      const focusedOption = interaction.options.getFocused(true);
+      
+      if (focusedOption.name === 'department') {
+        const departments = await whmcsApi.getSupportDepartments();
+        const filtered = departments
+          .filter(dept => dept.name.toLowerCase().includes(focusedOption.value.toLowerCase()))
+          .slice(0, 25) // Discord 限制最多 25 個選項
+          .map(dept => ({
+            name: dept.name,
+            value: dept.name
+          }));
+        
+        await interaction.respond(filtered);
+      }
+    } catch (error) {
+      logger.error('Error in wtb autocomplete:', error);
+      await interaction.respond([]);
     }
   }
 

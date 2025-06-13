@@ -120,9 +120,43 @@ const MessageSync = sequelize.define('MessageSync', {
   ]
 });
 
+const DepartmentRoleMapping = sequelize.define('DepartmentRoleMapping', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  whmcsDepartmentId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  departmentName: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  discordRoleId: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  discordRoleName: {
+    type: DataTypes.STRING,
+    allowNull: false
+  }
+}, {
+  tableName: 'department_role_mappings',
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['whmcsDepartmentId', 'discordRoleId']
+    }
+  ]
+});
+
 module.exports = {
   sequelize,
   TicketMapping,
   DepartmentMapping,
+  DepartmentRoleMapping,
   MessageSync
 };

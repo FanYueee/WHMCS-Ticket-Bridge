@@ -134,10 +134,15 @@ class SyncService {
         ticket.tid
       );
       
+      // 獲取部門權限映射
+      const departmentRoleMappings = await repository.getDepartmentRoleMappingsByDepartmentId(ticket.deptid);
+      const departmentRoles = departmentRoleMappings.map(mapping => mapping.discordRoleId);
+      
       const channel = await discordBot.createTicketChannel(
         departmentMapping.discordCategoryId,
         channelName,
-        `WHMCS Ticket #${ticket.tid} - ${ticket.subject}`
+        `WHMCS Ticket #${ticket.tid} - ${ticket.subject}`,
+        departmentRoles
       );
       
       // 修復客戶詳情獲取，只在有 userid 且非空時才調用

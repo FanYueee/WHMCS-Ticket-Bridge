@@ -1,4 +1,4 @@
-const { TicketMapping, DepartmentMapping, MessageSync } = require('./models');
+const { TicketMapping, DepartmentMapping, DepartmentRoleMapping, MessageSync } = require('./models');
 const logger = require('../utils/logger');
 
 class Repository {
@@ -165,6 +165,64 @@ class Repository {
       });
     } catch (error) {
       logger.error('Error getting message syncs by ticket ID:', error);
+      throw error;
+    }
+  }
+
+  async createDepartmentRoleMapping(data) {
+    try {
+      return await DepartmentRoleMapping.create(data);
+    } catch (error) {
+      logger.error('Error creating department role mapping:', error);
+      throw error;
+    }
+  }
+
+  async getDepartmentRoleMappingsByDepartmentId(whmcsDepartmentId) {
+    try {
+      return await DepartmentRoleMapping.findAll({
+        where: { whmcsDepartmentId }
+      });
+    } catch (error) {
+      logger.error('Error getting department role mappings:', error);
+      throw error;
+    }
+  }
+
+  async getDepartmentRoleMapping(whmcsDepartmentId, discordRoleId) {
+    try {
+      return await DepartmentRoleMapping.findOne({
+        where: { 
+          whmcsDepartmentId,
+          discordRoleId 
+        }
+      });
+    } catch (error) {
+      logger.error('Error getting specific department role mapping:', error);
+      throw error;
+    }
+  }
+
+  async deleteDepartmentRoleMapping(whmcsDepartmentId, discordRoleId) {
+    try {
+      const deletedCount = await DepartmentRoleMapping.destroy({
+        where: { 
+          whmcsDepartmentId,
+          discordRoleId 
+        }
+      });
+      return deletedCount > 0;
+    } catch (error) {
+      logger.error('Error deleting department role mapping:', error);
+      throw error;
+    }
+  }
+
+  async getAllDepartmentRoleMappings() {
+    try {
+      return await DepartmentRoleMapping.findAll();
+    } catch (error) {
+      logger.error('Error getting all department role mappings:', error);
       throw error;
     }
   }
