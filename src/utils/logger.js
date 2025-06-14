@@ -61,18 +61,16 @@ logger.error = function(...args) {
   return originalError(...args);
 };
 
-if (config.app.nodeEnv !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.printf(({ timestamp, level, message, stack }) => {
-        if (stack) {
-          return `${timestamp} ${level}: ${message}\n${stack}`;
-        }
-        return `${timestamp} ${level}: ${message}`;
-      })
-    )
-  }));
-}
+logger.add(new winston.transports.Console({
+  format: winston.format.combine(
+    winston.format.colorize(),
+    winston.format.printf(({ timestamp, level, message, stack }) => {
+      if (stack) {
+        return `${timestamp} ${level}: ${message}\n${stack}`;
+      }
+      return `${timestamp} ${level}: ${message}`;
+    })
+  )
+}));
 
 module.exports = logger;
