@@ -18,7 +18,8 @@ function generateTimestamp() {
 
 const timestamp = generateTimestamp();
 const combinedLogFile = path.join(logDir, `combined-${timestamp}.log`);
-const errorLogFile = path.join(logDir, `error-${timestamp}.log`);
+
+let errorTransport = null;
 
 const logger = winston.createLogger({
   level: config.app.logLevel,
@@ -33,14 +34,24 @@ const logger = winston.createLogger({
   defaultMeta: { service: 'whmcs-discord-sync', session: timestamp },
   transports: [
     new winston.transports.File({ 
-      filename: errorLogFile, 
-      level: 'error' 
-    }),
-    new winston.transports.File({ 
       filename: combinedLogFile
     })
   ]
 });
+
+const originalError = logger.error.bind(logger);
+logger.error = function(...args) {
+  if (!errorTransport) {
+    const errorLogFile = path.join(logDir, `error-${timestamp}.log`);
+    errorTransport = new winston.transports.File({ 
+      filename: errorLogFile, 
+      level: 'error' 
+    });
+    logger.add(errorTransport);
+  }
+  
+  return originalError(...args);
+};
 
 if (config.app.nodeEnv !== 'production') {
   logger.add(new winston.transports.Console({
