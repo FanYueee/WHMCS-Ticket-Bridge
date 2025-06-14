@@ -16,6 +16,21 @@ function generateTimestamp() {
   return `${year}-${month}-${day}-${hour}-${minute}-${second}`;
 }
 
+// 共用的日誌格式
+const customFormat = winston.format.combine(
+  winston.format.timestamp({
+    format: 'YYYY-MM-DD HH:mm:ss'
+  }),
+  winston.format.errors({ stack: true }),
+  winston.format.splat(),
+  winston.format.printf(({ timestamp, level, message, stack }) => {
+    if (stack) {
+      return `${timestamp} ${level}: ${message}\n${stack}`;
+    }
+    return `${timestamp} ${level}: ${message}`;
+  })
+);
+
 const timestamp = generateTimestamp();
 const combinedLogFile = path.join(logDir, `combined-${timestamp}.log`);
 
@@ -23,20 +38,7 @@ let errorTransport = null;
 
 const logger = winston.createLogger({
   level: config.app.logLevel,
-  format: winston.format.combine(
-    winston.format.timestamp({
-      format: 'YYYY-MM-DD HH:mm:ss'
-    }),
-    winston.format.errors({ stack: true }),
-    winston.format.splat(),
-    winston.format.printf(({ timestamp, level, message, stack }) => {
-      if (stack) {
-        return `${timestamp} ${level}: ${message}\n${stack}`;
-      }
-      return `${timestamp} ${level}: ${message}`;
-    })
-  ),
-  defaultMeta: { service: 'whmcs-discord-sync', session: timestamp },
+  format: customFormat,
   transports: [
     new winston.transports.File({ 
       filename: combinedLogFile
@@ -51,19 +53,7 @@ logger.error = function(...args) {
     errorTransport = new winston.transports.File({ 
       filename: errorLogFile, 
       level: 'error',
-      format: winston.format.combine(
-        winston.format.timestamp({
-          format: 'YYYY-MM-DD HH:mm:ss'
-        }),
-        winston.format.errors({ stack: true }),
-        winston.format.splat(),
-        winston.format.printf(({ timestamp, level, message, stack }) => {
-          if (stack) {
-            return `${timestamp} ${level}: ${message}\n${stack}`;
-          }
-          return `${timestamp} ${level}: ${message}`;
-        })
-      )
+      format: customFormat
     });
     logger.add(errorTransport);
   }
@@ -75,7 +65,12 @@ if (config.app.nodeEnv !== 'production') {
   logger.add(new winston.transports.Console({
     format: winston.format.combine(
       winston.format.colorize(),
-      winston.format.simple()
+      winston.format.printf(({ timestamp, level, message, stack }) => {
+        if (stack) {
+          return `${timestamp} ${level}: ${message}\n${stack}`;
+        }
+        return `${timestamp} ${level}: ${message}`;
+      })
     )
   }));
 }
