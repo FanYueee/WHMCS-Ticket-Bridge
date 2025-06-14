@@ -29,7 +29,12 @@ const logger = winston.createLogger({
     }),
     winston.format.errors({ stack: true }),
     winston.format.splat(),
-    winston.format.json()
+    winston.format.printf(({ timestamp, level, message, stack }) => {
+      if (stack) {
+        return `${timestamp} ${level}: ${message}\n${stack}`;
+      }
+      return `${timestamp} ${level}: ${message}`;
+    })
   ),
   defaultMeta: { service: 'whmcs-discord-sync', session: timestamp },
   transports: [
@@ -45,7 +50,20 @@ logger.error = function(...args) {
     const errorLogFile = path.join(logDir, `error-${timestamp}.log`);
     errorTransport = new winston.transports.File({ 
       filename: errorLogFile, 
-      level: 'error' 
+      level: 'error',
+      format: winston.format.combine(
+        winston.format.timestamp({
+          format: 'YYYY-MM-DD HH:mm:ss'
+        }),
+        winston.format.errors({ stack: true }),
+        winston.format.splat(),
+        winston.format.printf(({ timestamp, level, message, stack }) => {
+          if (stack) {
+            return `${timestamp} ${level}: ${message}\n${stack}`;
+          }
+          return `${timestamp} ${level}: ${message}`;
+        })
+      )
     });
     logger.add(errorTransport);
   }
