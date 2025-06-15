@@ -98,8 +98,7 @@ const MessageSync = sequelize.define('MessageSync', {
   },
   discordMessageId: {
     type: DataTypes.STRING,
-    allowNull: false,
-    unique: true
+    allowNull: false
   },
   direction: {
     type: DataTypes.ENUM('whmcs_to_discord', 'discord_to_whmcs'),

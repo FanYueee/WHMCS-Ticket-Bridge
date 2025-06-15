@@ -417,10 +417,25 @@ class SyncService {
         logger.info(`Processing reply for ticket ${ticket.tid}: replyId=${replyId}, admin=${reply.admin}, message preview="${reply.message ? reply.message.substring(0, 50) : 'EMPTY'}..."`);
         
         const existingSync = await repository.getMessageSyncByWhmcsReplyId(replyId, ticket.tid);
-        logger.info(`Existing sync check for reply ${replyId}: ${existingSync ? 'EXISTS' : 'NOT_EXISTS'}`);
+        logger.info(`Existing sync check for reply ${replyId}: ${existingSync ? `EXISTS (direction: ${existingSync.direction})` : 'NOT_EXISTS'}`);
         
-        // 簡化邏輯：只檢查資料庫記錄，不驗證 Discord 訊息
-        let shouldSync = !existingSync;
+        // 新的統一同步邏輯：
+        // 1. 如果有 whmcs_to_discord 記錄 = 已同步過，跳過
+        // 2. 如果只有 discord_to_whmcs 記錄 = 需要刪除舊記錄並同步embed格式
+        // 3. 沒有記錄 = 正常同步
+        let shouldSync = false;
+        if (!existingSync) {
+          shouldSync = true;
+          logger.info(`Reply ${replyId} has no sync record, will sync to Discord`);
+        } else if (existingSync.direction === 'whmcs_to_discord') {
+          // 已經同步過了
+          logger.info(`Reply ${replyId} already synced to Discord, skipping`);
+          shouldSync = false;
+        } else if (existingSync.direction === 'discord_to_whmcs') {
+          // 這個回覆來自Discord，原訊息已被刪除，現在需要以embed格式同步
+          logger.info(`Reply ${replyId} originated from Discord, will sync as embed format (original message deleted)`);
+          shouldSync = true;
+        }
         
         if (shouldSync) {
           const isAdmin = reply.admin !== '';
@@ -459,6 +474,13 @@ class SyncService {
           try {
             const message = await channel.send(messageOptions);
             
+            // 如果這個回覆原本來自Discord，先刪除舊的記錄
+            if (existingSync && existingSync.direction === 'discord_to_whmcs') {
+              await repository.deleteMessageSync(existingSync.id);
+              logger.info(`Deleted old discord_to_whmcs record for reply ${replyId}`);
+            }
+            
+            // 創建新的同步記錄
             await repository.createMessageSync({
               whmcsTicketId: ticket.tid,
               whmcsReplyId: replyId,
@@ -466,8 +488,13 @@ class SyncService {
               direction: 'whmcs_to_discord'
             });
             
-            console.log(`📨 Synced reply ${replyId} from WHMCS to Discord for ticket ${ticket.tid}`);
-            logger.info(`Synced reply ${replyId} from WHMCS to Discord`);
+            if (existingSync && existingSync.direction === 'discord_to_whmcs') {
+              console.log(`📨 Re-synced Discord-originated reply ${replyId} as embed format for ticket ${ticket.tid}`);
+              logger.info(`Re-synced Discord-originated reply ${replyId} as embed format`);
+            } else {
+              console.log(`📨 Synced reply ${replyId} from WHMCS to Discord for ticket ${ticket.tid}`);
+              logger.info(`Synced reply ${replyId} from WHMCS to Discord`);
+            }
           } finally {
             // 清理臨時附件檔案
             if (processedAttachments.length > 0) {

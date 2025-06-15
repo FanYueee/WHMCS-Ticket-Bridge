@@ -170,6 +170,7 @@ class MessageHandler {
         attachments  // 傳遞附件陣列
       );
       
+      // 創建同步記錄，標記為臨時記錄（稍後會被WHMCS同步覆蓋）
       await repository.createMessageSync({
         whmcsTicketId: ticketMapping.whmcsTicketId,
         whmcsReplyId: response.replyid,
@@ -177,7 +178,21 @@ class MessageHandler {
         direction: 'discord_to_whmcs'
       });
       
+      logger.info(`Created sync record: Discord message ${message.id} → WHMCS reply ${response.replyid} (direction: discord_to_whmcs)`);
+      
+      // 先反應表示同步成功
       await message.react('✅');
+      
+      // 等待一下確保同步完成，然後刪除原訊息
+      setTimeout(async () => {
+        try {
+          await message.delete();
+          logger.info(`Deleted original Discord message ${message.id} after sync to WHMCS`);
+          console.log(`🗑️ Deleted original Discord message, will be replaced with WHMCS format`);
+        } catch (deleteError) {
+          logger.warn(`Failed to delete Discord message ${message.id}:`, deleteError.message);
+        }
+      }, 2000); // 2秒後刪除
       
       console.log(`✉️  Synced Discord message to WHMCS ticket ${ticketMapping.whmcsTicketId}`);
       logger.info(`Synced Discord message to WHMCS ticket ${ticketMapping.whmcsTicketId}`);
