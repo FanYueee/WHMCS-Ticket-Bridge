@@ -218,148 +218,81 @@ class WhmcsApi {
   }
 
   async downloadAttachment(attachmentIdentifier, ticketId, replyId = null, retries = 2) {
-    const baseUrl = this.apiUrl.replace('/includes/api.php', '');
+    logger.info(`downloadAttachment called with: attachmentId=${attachmentIdentifier}, ticketId=${ticketId}, replyId=${replyId}`);
     
-    // 嘗試不同的下載方法
-    const downloadMethods = [
-      // 方法1: 使用正確的 WHMCS GetTicketAttachment API
-      {
-        name: 'WHMCS GetTicketAttachment API (reply)',
-        url: this.apiUrl,
-        method: 'POST',
-        data: {
-          action: 'GetTicketAttachment',
-          relatedid: replyId,
-          type: 'reply',
-          index: attachmentIdentifier,
-          username: this.identifier,
-          password: this.secret,
-          responsetype: 'json'
-        }
-      },
-      // 方法2: 備用的 ticket 類型
-      {
+    const downloadMethods = [];
+    
+    // 方法1: 使用 ticket 類型 (最可靠的官方方法)
+    if (ticketId && ticketId !== null && ticketId !== 'null' && ticketId !== '') {
+      downloadMethods.push({
         name: 'WHMCS GetTicketAttachment API (ticket)',
-        url: this.apiUrl,
-        method: 'POST',
         data: {
           action: 'GetTicketAttachment',
-          relatedid: ticketId,
+          relatedid: String(ticketId),
           type: 'ticket',
-          index: attachmentIdentifier,
+          index: String(attachmentIdentifier),
           username: this.identifier,
           password: this.secret,
           responsetype: 'json'
         }
-      },
-      // 方法2: 使用瀏覽器發現的格式 (dl.php)
-      {
-        name: 'Direct dl.php with auth',
-        url: `${baseUrl}/dl.php`,
-        method: 'GET',
-        params: {
-          type: 'ar',
-          id: replyId,
-          i: attachmentIdentifier
-        },
-        requiresAuth: true
-      },
-      // 方法3: 備用的 dl.php 格式
-      {
-        name: 'Alternative dl.php format',
-        url: `${baseUrl}/dl.php`,
-        method: 'GET',
-        params: {
-          type: 'a',
-          id: attachmentIdentifier,
-          t: ticketId
-        },
-        requiresAuth: true
-      }
-    ];
+      });
+    }
+    
+    if (replyId && replyId !== null && replyId !== 'null' && replyId !== '') {
+      downloadMethods.push({
+        name: 'WHMCS GetTicketAttachment API (reply)',
+        data: {
+          action: 'GetTicketAttachment',
+          relatedid: String(replyId),
+          type: 'reply',
+          index: String(attachmentIdentifier),
+          username: this.identifier,
+          password: this.secret,
+          responsetype: 'json'
+        }
+      });
+    }
+    
+    if (downloadMethods.length === 0) {
+      throw new Error(`No valid download methods available - missing required IDs: ticketId=${ticketId}, replyId=${replyId}`);
+    }
+    
+    logger.info(`Using ${downloadMethods.length} official WHMCS API methods for attachment ${attachmentIdentifier}`);
     
     for (const method of downloadMethods) {
       for (let attempt = 1; attempt <= retries + 1; attempt++) {
         try {
-          logger.debug(`Trying ${method.name} (attempt ${attempt}/${retries + 1})`);
+          logger.info(`Trying ${method.name} (attempt ${attempt}/${retries + 1}) with params:`, JSON.stringify(method.data));
           
-          let response;
+          const response = await axios.post(this.apiUrl, new URLSearchParams(method.data), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            timeout: 15000
+          });
           
-          if (method.method === 'POST') {
-            response = await axios.post(method.url, new URLSearchParams(method.data), {
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              timeout: 15000
-            });
+          logger.info(`API Response: ${method.name} - result: ${response.data.result}, message: ${response.data.message || 'none'}`);
+          
+          if (response.data.result === 'success' && response.data.data) {
+            const attachmentData = Buffer.from(response.data.data, 'base64');
+            const filename = response.data.filename || 'attachment';
             
-            // 處理 WHMCS GetTicketAttachment API 回應
-            if (response.data.result === 'success' && response.data.data) {
-              const attachmentData = Buffer.from(response.data.data, 'base64');
-              const filename = response.data.filename || 'attachment';
+            if (attachmentData.length > 0) {
+              const isPng = attachmentData[0] === 0x89 && attachmentData[1] === 0x50;
+              const isJpeg = attachmentData[0] === 0xFF && attachmentData[1] === 0xD8;
               
-              // 檢查檔案是否有效
-              if (attachmentData.length > 0) {
-                const isPng = attachmentData[0] === 0x89 && attachmentData[1] === 0x50;
-                const isJpeg = attachmentData[0] === 0xFF && attachmentData[1] === 0xD8;
-                
-                logger.info(`Successfully downloaded attachment via ${method.name}: ${filename} (${attachmentData.length} bytes, ${isPng ? 'PNG' : isJpeg ? 'JPEG' : 'unknown format'})`);
-                
-                return {
-                  data: attachmentData,
-                  contentType: isPng ? 'image/png' : isJpeg ? 'image/jpeg' : 'application/octet-stream',
-                  contentLength: attachmentData.length
-                };
-              } else {
-                logger.warn(`${method.name} returned empty data`);
-                continue;
-              }
+              logger.info(`Successfully downloaded attachment via ${method.name}: ${filename} (${attachmentData.length} bytes, ${isPng ? 'PNG' : isJpeg ? 'JPEG' : 'unknown format'})`);
+              
+              return {
+                data: attachmentData,
+                contentType: isPng ? 'image/png' : isJpeg ? 'image/jpeg' : 'application/octet-stream',
+                contentLength: attachmentData.length
+              };
             } else {
-              logger.warn(`${method.name} failed: ${response.data.message || 'Unknown error'}`);
+              logger.warn(`${method.name} returned empty data`);
               continue;
             }
           } else {
-            // 處理需要認證的請求
-            const requestConfig = {
-              params: method.params,
-              responseType: 'arraybuffer',
-              timeout: 15000,
-              maxRedirects: 5
-            };
-            
-            // 如果需要認證，添加基本認證或其他認證方式
-            if (method.requiresAuth) {
-              // 嘗試使用 API 認證資訊
-              requestConfig.auth = {
-                username: this.identifier,
-                password: this.secret
-              };
-              
-              // 或者嘗試作為 query 參數添加認證
-              requestConfig.params = {
-                ...method.params,
-                username: this.identifier,
-                password: this.secret
-              };
-            }
-            
-            response = await axios.get(method.url, requestConfig);
-            
-            // 檢查是否為正確的檔案內容
-            if (response.status === 200 && response.data.byteLength > 0) {
-              const isHtml = Buffer.from(response.data.slice(0, 10)).toString().includes('<');
-              const contentType = response.headers['content-type'] || '';
-              
-              if (!isHtml && !contentType.includes('text/html')) {
-                logger.info(`Successfully downloaded attachment via ${method.name}: ${response.data.byteLength} bytes`);
-                return {
-                  data: response.data,
-                  contentType: contentType || 'application/octet-stream',
-                  contentLength: response.data.byteLength
-                };
-              } else {
-                logger.warn(`${method.name} returned HTML content (likely auth required), trying next method`);
-                break; // 跳到下一個方法
-              }
-            }
+            logger.warn(`${method.name} failed: ${response.data.message || 'Unknown error'}`);
+            continue;
           }
         } catch (error) {
           const isLastAttempt = attempt === retries + 1;
@@ -374,7 +307,7 @@ class WhmcsApi {
           
           if (isLastAttempt) {
             logger.warn(`${method.name} failed after all attempts: ${error.message}`);
-            break; // 跳到下一個方法
+            break; 
           } else {
             logger.warn(`${method.name} attempt ${attempt} failed, retrying: ${error.message}`);
             await new Promise(resolve => setTimeout(resolve, 1000 * attempt));

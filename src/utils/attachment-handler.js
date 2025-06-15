@@ -88,17 +88,25 @@ class AttachmentHandler {
   async processAttachments(attachments, whmcsApi, ticketId, replyId = null) {
     const processedAttachments = [];
     
+    logger.info(`Starting attachment processing: ticketId=${ticketId}, replyId=${replyId}, attachments=${attachments.length}`);
+    
     for (const attachment of attachments) {
       try {
-        logger.info(`Processing attachment: ${attachment.filename || attachment.name}`);
+        logger.info(`Processing attachment: ${attachment.filename || attachment.name}`, {
+          attachment: JSON.stringify(attachment),
+          ticketId,
+          replyId
+        });
         
         let attachmentData;
         let filename;
 
-        if (attachment.filename && typeof attachment.index !== 'undefined') {
-          // WHMCS attachment format with filename and index
+        if (attachment.filename) {
+          // WHMCS attachment format with filename - use array index as attachment index
           try {
-            const downloadResult = await whmcsApi.downloadAttachment(attachment.index, ticketId, replyId);
+            const attachmentIndex = attachments.indexOf(attachment);
+            logger.info(`Attempting download with params: index=${attachmentIndex}, ticketId=${ticketId}, replyId=${replyId}`);
+            const downloadResult = await whmcsApi.downloadAttachment(attachmentIndex, ticketId, replyId);
             attachmentData = downloadResult.data;
             filename = attachment.filename;
             logger.info(`Successfully downloaded attachment: ${filename}`);

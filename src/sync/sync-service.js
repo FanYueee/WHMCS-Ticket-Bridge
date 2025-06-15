@@ -305,10 +305,14 @@ class SyncService {
           if (reply.attachments && reply.attachments.length > 0) {
             try {
               console.log(`📎 Processing ${reply.attachments.length} attachments for reply ${replyId} using WHMCS API`);
+              // 使用 internal ticket ID 而不是 external ticket ID
+              const internalTicketId = ticket.id || ticket.ticketid;
+              logger.info(`Using internal ticket ID for attachments: ${internalTicketId} (external: ${ticket.tid})`);
+              
               processedAttachments = await attachmentHandler.processAttachments(
                 reply.attachments, 
                 whmcsApi, 
-                ticket.tid,
+                internalTicketId,
                 replyId
               );
               
