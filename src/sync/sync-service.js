@@ -71,11 +71,19 @@ class SyncService {
       
       if (existingMapping) {
         await this.updateExistingTicket(ticket, existingMapping);
+        
+        // Only sync replies if the ticket still exists and wasn't recreated by updateExistingTicket
+        const stillExists = await repository.getTicketMappingByWhmcsId(ticketId);
+        if (stillExists) {
+          const channel = await discordBot.getChannel(stillExists.discordChannelId);
+          if (channel) {
+            await this.syncTicketReplies(ticket);
+          }
+        }
       } else {
         await this.createNewTicketChannel(ticket);
+        // createNewTicketChannel already calls syncTicketReplies, no need to call again
       }
-      
-      await this.syncTicketReplies(ticket);
     } catch (error) {
       if (error.message === 'Ticket ID Not Found') {
         logger.warn(`Ticket ${ticketId} not found in WHMCS, cleaning up mapping`);
@@ -206,61 +214,54 @@ class SyncService {
 
   async updateExistingTicket(ticket, mapping) {
     try {
-      if (mapping.status !== ticket.status) {
-        const channel = await discordBot.getChannel(mapping.discordChannelId);
-        
-        if (channel) {
-          const statusEmbed = await TicketFormatter.createStatusUpdateEmbed(
-            ticket.tid,
-            mapping.status,
-            ticket.status
-          );
+      // First, always check if the channel exists
+      const channel = await discordBot.getChannel(mapping.discordChannelId);
+      
+      if (!channel) {
+        // Channel not found - recreate it if ticket is still active
+        if (!statusManager.isClosedStatus(ticket.status)) {
+          logger.warn(`Channel ${mapping.discordChannelId} not found for ticket ${ticket.tid}, recreating...`);
+          console.log(`⚠️ Channel missing for ticket ${ticket.tid}, recreating...`);
           
-          await channel.send({ embeds: [statusEmbed] });
-          logger.info(`Status change detected for ticket ${ticket.tid}: ${mapping.status} → ${ticket.status}`);
-          
-          if (statusManager.isClosedStatus(ticket.status)) {
-            // Delete channel and clean up database records
-            await discordBot.deleteChannel(mapping.discordChannelId);
-            await this.cleanupTicketData(ticket.tid);
-            logger.info(`Deleted channel and cleaned up data for closed ticket ${ticket.tid}`);
-            return; // Don't update mapping since we're deleting everything
-          }
+          // Recreate the channel
+          await this.recreateTicketChannel(ticket, mapping);
+          return; // Channel recreated, job done
         } else {
-          // Channel not found - recreate it if ticket is still active
-          if (!statusManager.isClosedStatus(ticket.status)) {
-            logger.warn(`Channel ${mapping.discordChannelId} not found for ticket ${ticket.tid}, recreating...`);
-            console.log(`⚠️ Channel missing for ticket ${ticket.tid}, recreating...`);
-            
-            // Recreate the channel
-            await this.recreateTicketChannel(ticket, mapping);
-            return; // Channel recreated, no need to continue with status update
-          } else {
-            // Ticket is closed and channel doesn't exist, clean up mapping
-            logger.info(`Channel ${mapping.discordChannelId} not found for closed ticket ${ticket.tid}, cleaning up mapping`);
-            await this.cleanupTicketData(ticket.tid);
-            return;
-          }
+          // Ticket is closed and channel doesn't exist, clean up mapping
+          logger.info(`Channel ${mapping.discordChannelId} not found for closed ticket ${ticket.tid}, cleaning up mapping`);
+          await this.cleanupTicketData(ticket.tid);
+          return;
+        }
+      }
+      
+      // Channel exists, now check for status changes
+      if (mapping.status !== ticket.status) {
+        const statusEmbed = await TicketFormatter.createStatusUpdateEmbed(
+          ticket.tid,
+          mapping.status,
+          ticket.status
+        );
+        
+        await channel.send({ embeds: [statusEmbed] });
+        logger.info(`Status change detected for ticket ${ticket.tid}: ${mapping.status} → ${ticket.status}`);
+        
+        if (statusManager.isClosedStatus(ticket.status)) {
+          // Delete channel and clean up database records
+          await discordBot.deleteChannel(mapping.discordChannelId);
+          await this.cleanupTicketData(ticket.tid);
+          logger.info(`Deleted channel and cleaned up data for closed ticket ${ticket.tid}`);
+          return; // Don't update mapping since we're deleting everything
         }
       }
       
       if (mapping.priority !== ticket.priority) {
-        const channel = await discordBot.getChannel(mapping.discordChannelId);
-        if (channel) {
-          const newChannelName = TicketFormatter.formatChannelName(
-            ticket.priority,
-            mapping.departmentName,
-            ticket.tid
-          );
-          
-          await discordBot.updateChannelName(mapping.discordChannelId, newChannelName);
-        } else {
-          // Channel not found - recreate it
-          logger.warn(`Channel ${mapping.discordChannelId} not found for ticket ${ticket.tid} during priority update, recreating...`);
-          console.log(`⚠️ Channel missing for ticket ${ticket.tid} during priority update, recreating...`);
-          await this.recreateTicketChannel(ticket, mapping);
-          return; // Channel recreated, no need to continue
-        }
+        const newChannelName = TicketFormatter.formatChannelName(
+          ticket.priority,
+          mapping.departmentName,
+          ticket.tid
+        );
+        
+        await discordBot.updateChannelName(mapping.discordChannelId, newChannelName);
       }
       
       await repository.updateTicketMapping(ticket.tid, {
@@ -295,6 +296,13 @@ class SyncService {
       // Get department role mappings
       const departmentRoleMappings = await repository.getDepartmentRoleMappingsByDepartmentId(ticket.deptid);
       const departmentRoles = departmentRoleMappings.map(mapping => mapping.discordRoleId);
+      
+      // Clean up old message sync records for this ticket since we're recreating the channel
+      const oldMessageSyncs = await repository.getMessageSyncsByTicketId(ticket.tid);
+      for (const messageSync of oldMessageSyncs) {
+        await repository.deleteMessageSync(messageSync.id);
+      }
+      logger.info(`Cleaned up ${oldMessageSyncs.length} old message sync records for ticket ${ticket.tid}`);
       
       // Create new channel
       const newChannel = await discordBot.createTicketChannel(
@@ -521,10 +529,10 @@ class SyncService {
               const ticketDetails = await whmcsApi.getTicket(ticketId);
               ticketDetails.internalId = ticketSummary.id || ticketSummary.ticketid;
               
-              // 檢查狀態是否需要更新
+              // 檢查狀態和頻道是否需要更新，updateExistingTicket 會處理頻道重建
               await this.updateExistingTicket(ticketDetails, existingMapping);
               
-              // 如果票務未被刪除，同步回覆
+              // 如果票務未被刪除，同步回覆（updateExistingTicket 已確保頻道存在或已重建）
               const stillExists = await repository.getTicketMappingByWhmcsId(ticketId);
               if (stillExists) {
                 await this.syncTicketReplies(ticketDetails);
