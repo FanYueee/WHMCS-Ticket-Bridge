@@ -123,11 +123,18 @@ class WebhookHandler {
       
       if (mapping) {
         const discordBot = require('../bot/client');
+        const syncService = require('../sync/sync-service');
         const channel = await discordBot.getChannel(mapping.discordChannelId);
         
         if (channel) {
           await channel.delete('WHMCS ticket deleted');
+        } else {
+          logger.warn(`Channel ${mapping.discordChannelId} not found for deleted ticket ${ticketId}`);
         }
+        
+        // Clean up mapping regardless of whether channel existed
+        await syncService.cleanupTicketData(ticketId);
+        logger.info(`Cleaned up data for deleted ticket ${ticketId}`);
       }
     } catch (error) {
       logger.error(`Error handling ticket deleted: ${ticketId}`, error);
