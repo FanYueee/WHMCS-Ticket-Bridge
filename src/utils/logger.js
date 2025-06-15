@@ -73,4 +73,9 @@ logger.add(new winston.transports.Console({
   )
 }));
 
+// 添加與 console-logger 兼容的方法
+logger.log = (message) => {
+  logger.info(message);
+};
+
 module.exports = logger;

@@ -7,7 +7,33 @@ const webhookServer = require('./webhooks/server');
 const messageHandler = require('./bot/message-handler');
 const commands = require('./bot/commands');
 const { REST, Routes } = require('discord.js');
-const console = require('./utils/console-logger');
+
+// 創建帶時間戳的控制台輸出函數
+const getTimestamp = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  const second = String(now.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+};
+
+const consoleWithLogger = {
+  log: (message) => {
+    console.log(`${getTimestamp()} info: ${message}`);
+    logger.info(message);
+  },
+  error: (message) => {
+    console.error(`${getTimestamp()} error: ${message}`);
+    logger.error(message);
+  },
+  warn: (message) => {
+    console.warn(`${getTimestamp()} warn: ${message}`);
+    logger.warn(message);
+  }
+};
 
 async function deployCommands() {
   try {
@@ -28,28 +54,24 @@ async function deployCommands() {
 
 async function start() {
   try {
-    console.log('========================================');
-    console.log('🚀 Starting WHMCS Discord Sync Service...');
-    console.log('========================================');
-    logger.info('Starting WHMCS Discord Sync Service...');
+    consoleWithLogger.log('========================================');
+    consoleWithLogger.log('🚀 Starting WHMCS Discord Sync Service...');
+    consoleWithLogger.log('========================================');
     
-    console.log('📊 Connecting to database...');
+    consoleWithLogger.log('📊 Connecting to database...');
     await sequelize.authenticate();
-    console.log('✅ Database connection established');
-    logger.info('Database connection established');
+    consoleWithLogger.log('✅ Database connection established');
     
     await sequelize.sync();
-    console.log('✅ Database synced');
-    logger.info('Database synced');
+    consoleWithLogger.log('✅ Database synced');
     
-    console.log('🤖 Starting Discord bot...');
+    consoleWithLogger.log('🤖 Starting Discord bot...');
     await discordBot.start();
-    console.log('✅ Discord bot started');
-    logger.info('Discord bot started');
+    consoleWithLogger.log('✅ Discord bot started');
     
-    console.log('📝 Deploying slash commands...');
+    consoleWithLogger.log('📝 Deploying slash commands...');
     await deployCommands();
-    console.log('✅ Commands deployed');
+    consoleWithLogger.log('✅ Commands deployed');
     
     const client = discordBot.getClient();
     client.on('interactionCreate', async (interaction) => {
@@ -70,48 +92,41 @@ async function start() {
       }
     });
     
-    console.log('🏢 Syncing WHMCS departments...');
+    consoleWithLogger.log('🏢 Syncing WHMCS departments...');
     await syncService.syncDepartments();
-    console.log('✅ Departments synced');
-    logger.info('Departments synced');
+    consoleWithLogger.log('✅ Departments synced');
     
-    console.log('🎫 Starting initial ticket sync...');
+    consoleWithLogger.log('🎫 Starting initial ticket sync...');
     const syncedCount = await syncService.syncAllTickets();
-    console.log(`✅ Initial sync completed: ${syncedCount} tickets synced`);
-    logger.info('Initial ticket sync completed');
+    consoleWithLogger.log(`✅ Initial sync completed: ${syncedCount} tickets synced`);
     
-    console.log('🌐 Starting webhook server on port 3000...');
+    consoleWithLogger.log('🌐 Starting webhook server on port 3000...');
     webhookServer.start();
-    console.log('✅ Webhook server started');
-    logger.info('Webhook server started');
+    consoleWithLogger.log('✅ Webhook server started');
     
-    console.log(`⏰ Starting periodic sync (every ${config.app.syncInterval/1000} seconds)...`);
+    consoleWithLogger.log(`⏰ Starting periodic sync (every ${config.app.syncInterval/1000} seconds)...`);
     await syncService.startPeriodicSync(config.app.syncInterval);
-    console.log('✅ Periodic sync started');
-    logger.info('Periodic sync started');
+    consoleWithLogger.log('✅ Periodic sync started');
     
-    console.log('========================================');
-    console.log('✨ WHMCS Discord Sync Service is ready!');
-    console.log('========================================');
-    console.log(`📌 Bot: ${client.user.tag}`);
-    console.log(`📌 Guild: ${config.discord.guildId}`);
-    console.log(`📌 Webhook: http://localhost:3000/webhook`);
-    console.log('========================================');
-    logger.info('WHMCS Discord Sync Service is running!');
+    consoleWithLogger.log('========================================');
+    consoleWithLogger.log('✨ WHMCS Discord Sync Service is ready!');
+    consoleWithLogger.log('========================================');
+    consoleWithLogger.log(`📌 Bot: ${client.user.tag}`);
+    consoleWithLogger.log(`📌 Guild: ${config.discord.guildId}`);
+    consoleWithLogger.log(`📌 Webhook: http://localhost:3000/webhook`);
+    consoleWithLogger.log('========================================');
     
     process.on('SIGINT', async () => {
-      console.log('\n⚠️  Shutting down gracefully...');
-      logger.info('Shutting down...');
+      consoleWithLogger.log('\n⚠️  Shutting down gracefully...');
       webhookServer.stop();
       await discordBot.getClient().destroy();
       await sequelize.close();
-      console.log('✅ Shutdown complete');
+      consoleWithLogger.log('✅ Shutdown complete');
       process.exit(0);
     });
     
   } catch (error) {
-    console.error(`❌ Failed to start service: ${error.message}`);
-    logger.error('Failed to start service:', error);
+    consoleWithLogger.error(`❌ Failed to start service: ${error.message}`);
     process.exit(1);
   }
 }

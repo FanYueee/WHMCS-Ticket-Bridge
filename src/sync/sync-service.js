@@ -5,8 +5,34 @@ const TicketFormatter = require('../whmcs/ticket-formatter');
 const logger = require('../utils/logger');
 const attachmentHandler = require('../utils/attachment-handler');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const console = require('../utils/console-logger');
 const statusManager = require('../utils/status-manager');
+
+// 創建帶時間戳的控制台輸出函數
+const getTimestamp = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  const second = String(now.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+};
+
+const logInfo = (message) => {
+  console.log(`${getTimestamp()} info: ${message}`);
+  logger.info(message);
+};
+
+const logError = (message) => {
+  console.error(`${getTimestamp()} error: ${message}`);
+  logger.error(message);
+};
+
+const logWarn = (message) => {
+  console.warn(`${getTimestamp()} warn: ${message}`);
+  logger.warn(message);
+};
 
 class SyncService {
   async syncDepartments() {
@@ -32,7 +58,8 @@ class SyncService {
               if (!category) {
                 category = await discordBot.createCategory(uniqueCategoryName);
               }
-              console.log(`⚠️ Category name conflict, created unique category: ${uniqueCategoryName}`);
+              logInfo(`⚠️ Category name conflict, created unique category: ${uniqueCategoryName}`);
+              logger.info(`Category name conflict, created unique category: ${uniqueCategoryName}`);
             }
           } else {
             // 分類不存在，創建新的
@@ -49,7 +76,7 @@ class SyncService {
             logger.info(`Mapped department ${dept.name} to Discord category ${category.name}`);
           } catch (error) {
             if (error.name === 'SequelizeUniqueConstraintError') {
-              console.error(`❌ Failed to map department ${dept.name}: Category ${category.id} already in use`);
+              logError(`❌ Failed to map department ${dept.name}: Category ${category.id} already in use`);
               logger.error(`Unique constraint error for department ${dept.name}`, error);
             } else {
               throw error;
@@ -199,7 +226,7 @@ class SyncService {
         status: ticket.status
       });
       
-      console.log(`📌 Created Discord channel for ticket ${ticket.tid}`);
+      logInfo(`📌 Created Discord channel for ticket ${ticket.tid}`);
       logger.info(`Created Discord channel for ticket ${ticket.tid}`);
       
       // 建立頻道和映射後立即同步回覆
@@ -221,7 +248,7 @@ class SyncService {
         // Channel not found - recreate it if ticket is still active
         if (!statusManager.isClosedStatus(ticket.status)) {
           logger.warn(`Channel ${mapping.discordChannelId} not found for ticket ${ticket.tid}, recreating...`);
-          console.log(`⚠️ Channel missing for ticket ${ticket.tid}, recreating...`);
+          logInfo(`⚠️ Channel missing for ticket ${ticket.tid}, recreating...`);
           
           // Recreate the channel
           await this.recreateTicketChannel(ticket, mapping);
@@ -278,7 +305,7 @@ class SyncService {
   async recreateTicketChannel(ticket, mapping) {
     try {
       logger.info(`Recreating channel for ticket ${ticket.tid}`);
-      console.log(`🔧 Recreating channel for ticket ${ticket.tid}`);
+      logInfo(`🔧 Recreating channel for ticket ${ticket.tid}`);
       
       // Get department mapping to find the category
       const departmentMapping = await repository.getDepartmentMappingByWhmcsId(ticket.deptid);
@@ -355,14 +382,14 @@ class SyncService {
       });
       
       logger.info(`Successfully recreated channel for ticket ${ticket.tid} with ID ${newChannel.id}`);
-      console.log(`✅ Recreated channel for ticket ${ticket.tid}`);
+      logInfo(`✅ Recreated channel for ticket ${ticket.tid}`);
       
       // Sync all replies to the new channel
       await this.syncTicketReplies(ticket);
       
     } catch (error) {
       logger.error(`Error recreating channel for ticket ${ticket.tid}:`, error);
-      console.error(`❌ Failed to recreate channel for ticket ${ticket.tid}: ${error.message}`);
+      logError(`❌ Failed to recreate channel for ticket ${ticket.tid}: ${error.message}`);
       throw error;
     }
   }
@@ -384,7 +411,7 @@ class SyncService {
         // Check if ticket is still active before recreating
         if (!statusManager.isClosedStatus(ticket.status)) {
           logger.info(`Ticket ${ticket.tid} is still active, recreating channel...`);
-          console.log(`⚠️ Channel missing for active ticket ${ticket.tid}, recreating...`);
+          logInfo(`⚠️ Channel missing for active ticket ${ticket.tid}, recreating...`);
           await this.recreateTicketChannel(ticket, mapping);
           return; // Channel recreated and replies synced
         } else {
@@ -400,7 +427,7 @@ class SyncService {
       // 檢查回覆結構但不跳過處理
       if (replies.length > 0 && typeof replies[0] === 'string') {
         logger.warn(`Ticket ${ticket.tid} has string replies instead of objects:`, replies);
-        console.warn(`⚠️ Ticket ${ticket.tid} has unexpected reply format`);
+        logWarn(`⚠️ Ticket ${ticket.tid} has unexpected reply format`);
         // 移除 return，繼續處理
       }
       
@@ -408,7 +435,7 @@ class SyncService {
         // 記錄回覆結構以進行偵錯
         if (!reply.id && !reply.replyid) {
           logger.warn('Reply missing ID, skipping sync. Reply data:', JSON.stringify(reply));
-          console.warn(`⚠️ Reply missing ID for ticket ${ticket.tid}`);
+          logWarn(`⚠️ Reply missing ID for ticket ${ticket.tid}`);
           continue;
         }
         
@@ -447,7 +474,7 @@ class SyncService {
           // 處理附件 - 使用新的 GetTicketAttachment API
           if (reply.attachments && reply.attachments.length > 0) {
             try {
-              console.log(`📎 Processing ${reply.attachments.length} attachments for reply ${replyId} using WHMCS API`);
+              logInfo(`📎 Processing ${reply.attachments.length} attachments for reply ${replyId} using WHMCS API`);
               // 使用 internal ticket ID 而不是 external ticket ID
               const internalTicketId = ticket.id || ticket.ticketid;
               logger.info(`Using internal ticket ID for attachments: ${internalTicketId} (external: ${ticket.tid})`);
@@ -461,13 +488,13 @@ class SyncService {
               
               if (processedAttachments.length > 0) {
                 messageOptions.files = processedAttachments.map(a => a.attachment);
-                console.log(`📎 Successfully processed ${processedAttachments.length} attachments`);
+                logInfo(`📎 Successfully processed ${processedAttachments.length} attachments`);
               } else {
-                console.log(`📎 No attachments could be processed - will show as links instead`);
+                logInfo(`📎 No attachments could be processed - will show as links instead`);
               }
             } catch (error) {
               logger.error(`Error processing attachments for reply ${replyId}:`, error);
-              console.warn(`⚠️ Failed to process attachments for reply ${replyId} - will show as links`);
+              logWarn(`⚠️ Failed to process attachments for reply ${replyId} - will show as links`);
             }
           }
           
@@ -489,10 +516,10 @@ class SyncService {
             });
             
             if (existingSync && existingSync.direction === 'discord_to_whmcs') {
-              console.log(`📨 Re-synced Discord-originated reply ${replyId} as embed format for ticket ${ticket.tid}`);
+              logInfo(`📨 Re-synced Discord-originated reply ${replyId} as embed format for ticket ${ticket.tid}`);
               logger.info(`Re-synced Discord-originated reply ${replyId} as embed format`);
             } else {
-              console.log(`📨 Synced reply ${replyId} from WHMCS to Discord for ticket ${ticket.tid}`);
+              logInfo(`📨 Synced reply ${replyId} from WHMCS to Discord for ticket ${ticket.tid}`);
               logger.info(`Synced reply ${replyId} from WHMCS to Discord`);
             }
           } finally {
@@ -574,7 +601,7 @@ class SyncService {
           try {
             await discordBot.deleteChannel(existingMapping.discordChannelId);
             await this.cleanupTicketData(ticketId);
-            console.log(`🗑️ Deleted channel and cleaned up data for closed ticket ${ticketId}`);
+            logInfo(`🗑️ Deleted channel and cleaned up data for closed ticket ${ticketId}`);
           } catch (error) {
             logger.error(`Error cleaning up closed ticket ${ticketId}:`, error);
           }
@@ -593,7 +620,7 @@ class SyncService {
     
     const runSync = async () => {
       try {
-        console.log(`🔄 Running periodic sync...`);
+        logInfo(`🔄 Running periodic sync...`);
         logger.info('Running periodic sync...');
         const activeTickets = await repository.getAllActiveTickets();
         
@@ -610,7 +637,7 @@ class SyncService {
           }
         }
         
-        console.log(`✅ Periodic sync completed - checked ${activeTickets.length} active tickets`);
+        logInfo(`✅ Periodic sync completed - checked ${activeTickets.length} active tickets`);
         logger.info('Periodic sync completed');
         
         // 清理臨時附件檔案
@@ -620,7 +647,7 @@ class SyncService {
           logger.warn('Error during temp file cleanup:', error);
         }
       } catch (error) {
-        console.error(`❌ Error in periodic sync: ${error.message}`);
+        logError(`❌ Error in periodic sync: ${error.message}`);
         logger.error('Error in periodic sync:', error);
       }
     };

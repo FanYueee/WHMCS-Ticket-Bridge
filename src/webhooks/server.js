@@ -3,7 +3,23 @@ const bodyParser = require('body-parser');
 const config = require('../../config');
 const logger = require('../utils/logger');
 const webhookHandler = require('./webhook-handler');
-const console = require('../utils/console-logger');
+
+// 創建帶時間戳的控制台輸出函數
+const getTimestamp = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  const second = String(now.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+};
+
+const logInfo = (message) => {
+  console.log(`${getTimestamp()} info: ${message}`);
+  logger.info(message);
+};
 
 class WebhookServer {
   constructor() {
@@ -17,7 +33,7 @@ class WebhookServer {
     this.app.use(bodyParser.urlencoded({ extended: true }));
     
     this.app.use((req, res, next) => {
-      console.log(`🔔 Webhook received: ${req.method} ${req.path}`);
+      logInfo(`🔔 Webhook received: ${req.method} ${req.path}`);
       logger.info(`Webhook received: ${req.method} ${req.path}`);
       next();
     });

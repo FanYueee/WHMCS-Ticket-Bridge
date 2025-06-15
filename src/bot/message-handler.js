@@ -3,7 +3,28 @@ const whmcsApi = require('../whmcs/api');
 const repository = require('../database/repository');
 const TicketFormatter = require('../whmcs/ticket-formatter');
 const logger = require('../utils/logger');
-const console = require('../utils/console-logger');
+
+// 創建帶時間戳的控制台輸出函數
+const getTimestamp = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  const second = String(now.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+};
+
+const logInfo = (message) => {
+  console.log(`${getTimestamp()} info: ${message}`);
+  logger.info(message);
+};
+
+const logError = (message) => {
+  console.error(`${getTimestamp()} error: ${message}`);
+  logger.error(message);
+};
 
 class MessageHandler {
   constructor() {
@@ -188,16 +209,16 @@ class MessageHandler {
         try {
           await message.delete();
           logger.info(`Deleted original Discord message ${message.id} after sync to WHMCS`);
-          console.log(`🗑️ Deleted original Discord message, will be replaced with WHMCS format`);
+          logInfo(`🗑️ Deleted original Discord message, will be replaced with WHMCS format`);
         } catch (deleteError) {
           logger.warn(`Failed to delete Discord message ${message.id}:`, deleteError.message);
         }
       }, 2000); // 2秒後刪除
       
-      console.log(`✉️  Synced Discord message to WHMCS ticket ${ticketMapping.whmcsTicketId}`);
+      logInfo(`✉️  Synced Discord message to WHMCS ticket ${ticketMapping.whmcsTicketId}`);
       logger.info(`Synced Discord message to WHMCS ticket ${ticketMapping.whmcsTicketId}`);
     } catch (error) {
-      console.error(`❌ Failed to sync reply to ticket ${ticketMapping.whmcsTicketId}: ${error.message}`);
+      logError(`❌ Failed to sync reply to ticket ${ticketMapping.whmcsTicketId}: ${error.message}`);
       logger.error('Error syncing reply to WHMCS:', error);
       await message.react('❌');
       const errorMsg = await message.channel.send('Failed to sync reply to WHMCS.');
